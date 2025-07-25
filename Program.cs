@@ -1,3 +1,4 @@
+
 // Test: GitHub setup verification
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
