@@ -1,0 +1,19 @@
+' filepath: c:\RunCodes\Prog_ASP_NET\Projects\GroceryMate-Separated\Backend\GroceryMateApi\docs\analysis\use_cases\sales_use_cases.puml
+@startuml Sales Use Cases
+
+actor Manager
+actor Employee
+
+rectangle "Sales Subsystem" {
+  Manager -- (Record Sale)
+  Employee -- (Record Sale)
+  Manager -- (Update Sale)
+  Employee -- (Update Sale)
+  Manager -- (Search Sale)
+  Employee -- (Search Sale)
+  Manager -- (Print Invoice)
+  Employee -- (Print Invoice)
+  Manager -- (Archive Sale)
+}
+
+@enduml

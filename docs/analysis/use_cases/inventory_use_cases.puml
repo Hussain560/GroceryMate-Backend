@@ -1,0 +1,18 @@
+' filepath: c:\RunCodes\Prog_ASP_NET\Projects\GroceryMate-Separated\Backend\GroceryMateApi\docs\analysis\use_cases\inventory_use_cases.puml
+@startuml Inventory Use Cases
+
+actor Manager
+actor Employee
+
+rectangle "Inventory Subsystem" {
+  Manager -- (Record Product)
+  Employee -- (Record Product)
+  Manager -- (Update Stock)
+  Employee -- (Update Stock)
+  Manager -- (Search Product)
+  Employee -- (Search Product)
+  Manager -- (Print Low Stock)
+  Manager -- (Archive Product)
+}
+
+@enduml
