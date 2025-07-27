@@ -3,11 +3,16 @@
 ## Functional Requirements
 
 1. **Sales Subsystem**
-- **FR-1.1**: Record a sale transaction
-- **FR-1.2**: Update a sale transaction
-- **FR-1.3**: Search a sale by invoice number or date
-- **FR-1.4**: Print a sale invoice
-- **FR-1.5**: Archive a sale transaction
+- **FR-1.1**: Add a product to the sales cart
+- **FR-1.2**: Update a product quantity in the sales cart
+- **FR-1.3**: Remove a product from the sales cart
+- **FR-1.4**: Clear the sales cart
+- **FR-1.5**: Calculate a sale summary (subtotal, discounts, taxes, total)
+- **FR-1.6**: Record a completed sale transaction from the cart
+- **FR-1.7**: Display cart items with details (product name, quantity, price)
+- **FR-1.8**: Search a sale by invoice number or date
+- **FR-1.9**: Print a sale invoice
+- **FR-1.10**: Archive a sale transaction
 
 2. **Inventory Subsystem**
 - **FR-2.1**: Record a product
