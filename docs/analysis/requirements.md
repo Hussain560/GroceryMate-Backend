@@ -2,35 +2,35 @@
 
 ## Functional Requirements
 
-### Sales Subsystem
+1. **Sales Subsystem**
 - **FR-1.1**: Record a sale transaction
 - **FR-1.2**: Update a sale transaction
 - **FR-1.3**: Search a sale by invoice number or date
 - **FR-1.4**: Print a sale invoice
 - **FR-1.5**: Archive a sale transaction
 
-### Inventory Subsystem
+2. **Inventory Subsystem**
 - **FR-2.1**: Record a product
 - **FR-2.2**: Update a product’s stock or details
 - **FR-2.3**: Search a product by name or barcode
 - **FR-2.4**: Print a low stock report
 - **FR-2.5**: Archive outdated product records
 
-### Users Subsystem
+3. **Users Subsystem**
 - **FR-3.1**: Register a new user
 - **FR-3.2**: Authenticate a user
 - **FR-3.3**: Update a user profile
 - **FR-3.4**: Search users by name or role
 - **FR-3.5**: Archive or deactivate a user account
 
-### Reports Subsystem
+4. **Reports Subsystem**
 - **FR-4.1**: Generate a daily sales report
 - **FR-4.2**: Generate a weekly low stock report
 - **FR-4.3**: Provide a monthly profit/loss analysis
 - **FR-4.4**: Filter reports by date range or category
 - **FR-4.5**: Export a report to PDF or CSV
 
-### Suppliers Subsystem
+5. **Suppliers Subsystem**
 - **FR-5.1**: Register a supplier
 - **FR-5.2**: Create a restock order
 - **FR-5.3**: Track a restock order status
