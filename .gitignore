@@ -15,6 +15,9 @@ appsettings.*.json
 *.DS_Store
 *.swp
 *.tmp
+*.sketch
+# Ignore build directories
+*.psd
 # Ignore Rider IDE files
 .idea/
 # Ignore test results
