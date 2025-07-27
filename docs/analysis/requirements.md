@@ -15,11 +15,13 @@
 - **FR-1.10**: Archive a sale transaction
 
 2. **Inventory Subsystem**
-- **FR-2.1**: Record a product
-- **FR-2.2**: Update a product’s stock or details
-- **FR-2.3**: Search a product by name or barcode
-- **FR-2.4**: Print a low stock report
-- **FR-2.5**: Archive outdated product records
+- **FR-2.1**: Add a new product to the inventory
+- **FR-2.2**: Update a product’s stock level
+- **FR-2.3**: Update a product’s details (name, brand, barcode)
+- **FR-2.4**: Search a product by name or barcode
+- **FR-2.5**: Record a stock adjustment (e.g., spoilage, manual count)
+- **FR-2.6**: Generate a low stock report
+- **FR-2.7**: Archive outdated product records
 
 3. **Users Subsystem**
 - **FR-3.1**: Register a new user
