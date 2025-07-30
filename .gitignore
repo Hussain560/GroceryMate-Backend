@@ -26,3 +26,4 @@ TestResults/
 *.nupkg
 # Ignore node_modules if present
 node_modules/
+.github/
