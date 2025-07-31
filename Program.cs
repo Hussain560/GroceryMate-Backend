@@ -164,7 +164,7 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "GroceryMate API V1");
-    c.RoutePrefix = "swagger"; // Serve Swagger UI at /swagger/index.html
+    c.RoutePrefix = "swagger"; // Use default path: /swagger/index.html
     c.DocumentTitle = "GroceryMate API Documentation";
     c.DefaultModelsExpandDepth(-1); // Hide schemas by default
     // Remove custom interceptors and config object lines
