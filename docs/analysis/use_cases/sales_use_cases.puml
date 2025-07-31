@@ -1,19 +1,40 @@
-' filepath: c:\RunCodes\Prog_ASP_NET\Projects\GroceryMate-Separated\Backend\GroceryMateApi\docs\analysis\use_cases\sales_use_cases.puml
 @startuml Sales Use Cases
+left to right direction
 
 actor Manager
 actor Employee
 
 rectangle "Sales Subsystem" {
-  Manager -- (Record Sale)
-  Employee -- (Record Sale)
-  Manager -- (Update Sale)
-  Employee -- (Update Sale)
-  Manager -- (Search Sale)
-  Employee -- (Search Sale)
-  Manager -- (Print Invoice)
-  Employee -- (Print Invoice)
-  Manager -- (Archive Sale)
+  (Add Product to Cart)
+  (Update Product Quantity in Cart)
+  (Remove Product from Cart)
+  (Clear Sales Cart)
+  (Calculate Sale Summary)
+  (Record Completed Sale Transaction)
+  (Display Cart Items)
+  (Search Sale)
+  (Print Sale Invoice)
+  (Archive Sale Transaction)
 }
 
+Manager --> (Add Product to Cart)
+Employee --> (Add Product to Cart)
+Manager --> (Update Product Quantity in Cart)
+Employee --> (Update Product Quantity in Cart)
+Manager --> (Remove Product from Cart)
+Employee --> (Remove Product from Cart)
+Manager --> (Clear Sales Cart)
+Employee --> (Clear Sales Cart)
+Manager --> (Calculate Sale Summary)
+Employee --> (Calculate Sale Summary)
+Manager --> (Record Completed Sale Transaction)
+Employee --> (Record Completed Sale Transaction)
+Manager --> (Display Cart Items)
+Employee --> (Display Cart Items)
+Manager --> (Search Sale)
+Employee --> (Search Sale)
+Manager --> (Print Sale Invoice)
+Employee --> (Print Sale Invoice)
+Manager --> (Archive Sale Transaction)
+Employee --> (Archive Sale Transaction)
 @enduml
