@@ -1,4 +1,3 @@
-
 // Test: GitHub setup verification
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -165,27 +164,15 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "GroceryMate API V1");
-    c.RoutePrefix = "swagger"; // Swagger UI at /swagger/index.html
+    c.RoutePrefix = "swagger"; // Serve Swagger UI at /swagger/index.html
     c.DocumentTitle = "GroceryMate API Documentation";
     c.DefaultModelsExpandDepth(-1); // Hide schemas by default
-    // Add JWT token persistence
-    c.UseRequestInterceptor("(req) => { return req; }");
-    c.UseResponseInterceptor(@"(res) => { 
-        if (res.status === 200 && res.url.endsWith('/api/auth/login')) {
-            const token = JSON.parse(res.data).token;
-            if (token) {
-                localStorage.setItem('swagger_token', token);
-            }
-        }
-        return res; 
-    }");
-    // Add authorization button text
-    c.ConfigObject.AdditionalItems["authAction"] = "Login to use authenticated endpoints";
+    // Remove custom interceptors and config object lines
 });
 
 app.UseHttpsRedirection();
 app.UseRouting();
-app.UseCors("AllowAll"); // Must be between UseRouting and UseAuthorization
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
