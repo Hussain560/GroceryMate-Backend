@@ -34,7 +34,7 @@ namespace GroceryMateApi.Controllers
                     TotalProducts = await _context.Products.CountAsync(),
                     LowStockCount = await _context.Products.CountAsync(p => p.StockQuantity < p.ReorderLevel),
                     TodaysSales = await _context.Sales
-                        .Where(s => s.SaleDate.Date == DateTime.Today)
+                        .Where(s => s.SaleDate.Date == DateTime.UtcNow.Date)
                         .SumAsync(s => s.FinalTotal),
                     RecentTransactions = await _context.InventoryTransactions
                         .Include(t => t.Product)
@@ -46,9 +46,32 @@ namespace GroceryMateApi.Controllers
 
                 return Ok(new { success = true, data = model });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, error = "Error retrieving dashboard data" });
+                return StatusCode(500, new { success = false, error = "Error retrieving dashboard data", details = ex.Message });
+            }
+        }
+
+        [HttpGet("metrics")]
+        public async Task<IActionResult> GetMetrics()
+        {
+            try
+            {
+                var metrics = new
+                {
+                    totalSales = await _context.Sales.SumAsync(s => s.FinalTotal),
+                    stockAlerts = await _context.Products.CountAsync(p => p.StockQuantity < p.ReorderLevel),
+                    payments = new
+                    {
+                        cash = await _context.Sales.Where(s => s.PaymentMethod == "Cash").SumAsync(s => s.FinalTotal),
+                        card = await _context.Sales.Where(s => s.PaymentMethod == "Card").SumAsync(s => s.FinalTotal)
+                    }
+                };
+                return Ok(new { success = true, data = metrics });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, error = "Error retrieving metrics", details = ex.Message });
             }
         }
 
@@ -98,9 +121,9 @@ namespace GroceryMateApi.Controllers
 
                 return Ok(new { success = true, data = viewModel });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, error = "Error retrieving employee dashboard data" });
+                return StatusCode(500, new { success = false, error = "Error retrieving employee dashboard data", details = ex.Message });
             }
         }
 
