@@ -25,23 +25,33 @@ namespace GroceryMateApi.Controllers
 
         [HttpGet("manager")]
         [Authorize(Roles = "Manager")]
-        public async Task<IActionResult> GetManagerDashboard()
+        public async Task<IActionResult> GetManagerDashboard([FromQuery] string period = "Day")
         {
             try
             {
+                var query = _context.Sales.AsQueryable();
+                switch (period.ToLower())
+                {
+                    case "week":
+                        query = query.Where(s => s.SaleDate >= DateTime.UtcNow.AddDays(-7));
+                        break;
+                    case "month":
+                        query = query.Where(s => s.SaleDate >= DateTime.UtcNow.AddMonths(-1));
+                        break;
+                    case "custom":
+                        // Add custom date range logic later
+                        break;
+                }
+
                 var model = new DashboardViewModel
                 {
-                    TotalProducts = await _context.Products.CountAsync(),
+                    Sales = await query.CountAsync(),
+                    NetSales = await query.SumAsync(s => s.FinalTotal),
+                    NetIncome = await query.SumAsync(s => s.FinalTotal - s.SaleDetails.Sum(d => d.OriginalUnitPrice * d.Quantity)), // Mock, add costs
+                    DiscountAmount = await query.SumAsync(s => s.TotalDiscountAmount),
+                    ReturnAmount = 0m, // Add Return model later
                     LowStockCount = await _context.Products.CountAsync(p => p.StockQuantity < p.ReorderLevel),
-                    TodaysSales = await _context.Sales
-                        .Where(s => s.SaleDate.Date == DateTime.UtcNow.Date)
-                        .SumAsync(s => s.FinalTotal),
-                    RecentTransactions = await _context.InventoryTransactions
-                        .Include(t => t.Product)
-                        .Include(t => t.User)
-                        .OrderByDescending(t => t.TransactionDate)
-                        .Take(5)
-                        .ToListAsync()
+                    TodaysSales = await _context.Sales.Where(s => s.SaleDate.Date == DateTime.UtcNow.Date).SumAsync(s => s.FinalTotal)
                 };
 
                 return Ok(new { success = true, data = model });
