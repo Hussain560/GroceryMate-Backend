@@ -25,40 +25,126 @@ namespace GroceryMateApi.Controllers
 
         [HttpGet("manager")]
         [Authorize(Roles = "Manager")]
-        public async Task<IActionResult> GetManagerDashboard([FromQuery] string period = "Day")
+        public async Task<IActionResult> GetManagerDashboard(
+            [FromQuery] string period = "day",
+            [FromQuery] int? year = null,
+            [FromQuery] int? month = null,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] DateTime? date = null)
         {
             try
             {
-                var query = _context.Sales.AsQueryable();
-                switch (period.ToLower())
+                // Initialize date range
+                var currentDate = DateTime.UtcNow.Date;
+                var (periodStart, periodEnd) = period.ToLower() switch
                 {
-                    case "week":
-                        query = query.Where(s => s.SaleDate >= DateTime.UtcNow.AddDays(-7));
-                        break;
-                    case "month":
-                        query = query.Where(s => s.SaleDate >= DateTime.UtcNow.AddMonths(-1));
-                        break;
-                    case "custom":
-                        // Add custom date range logic later
-                        break;
-                }
-
-                var model = new DashboardViewModel
-                {
-                    Sales = await query.CountAsync(),
-                    NetSales = await query.SumAsync(s => s.FinalTotal),
-                    NetIncome = await query.SumAsync(s => s.FinalTotal - s.SaleDetails.Sum(d => d.OriginalUnitPrice * d.Quantity)), // Mock, add costs
-                    DiscountAmount = await query.SumAsync(s => s.TotalDiscountAmount),
-                    ReturnAmount = 0m, // Add Return model later
-                    LowStockCount = await _context.Products.CountAsync(p => p.StockQuantity < p.ReorderLevel),
-                    TodaysSales = await _context.Sales.Where(s => s.SaleDate.Date == DateTime.UtcNow.Date).SumAsync(s => s.FinalTotal)
+                    "week" => (currentDate.AddDays(-7), currentDate.AddDays(1)),
+                    "month" when year.HasValue && month.HasValue =>
+                        (new DateTime(year.Value, month.Value, 1),
+                         new DateTime(year.Value, month.Value, 1).AddMonths(1)),
+                    "custom" when startDate.HasValue && endDate.HasValue =>
+                        (startDate.Value.Date, endDate.Value.Date.AddDays(1)),
+                    _ => (date?.Date ?? currentDate, (date?.Date ?? currentDate).AddDays(1))
                 };
 
-                return Ok(new { success = true, data = model });
+                // Get previous period for growth calculation
+                var (prevPeriodStart, prevPeriodEnd) = period.ToLower() switch
+                {
+                    "week" => (periodStart.AddDays(-7), periodStart),
+                    "month" => (periodStart.AddMonths(-1), periodStart),
+                    "custom" => (
+                        periodStart.AddDays(-(periodEnd - periodStart).Days),
+                        periodStart),
+                    _ => (periodStart.AddDays(-1), periodStart)
+                };
+
+                // Current period query
+                var currentQuery = _context.Sales
+                    .Include(s => s.SaleDetails)
+                        .ThenInclude(sd => sd.Product)
+                            .ThenInclude(p => p.Category)
+                    .Where(s => s.SaleDate >= periodStart && s.SaleDate < periodEnd);
+
+                // Previous period query for growth calculation
+                var previousQuery = _context.Sales
+                    .Where(s => s.SaleDate >= prevPeriodStart && s.SaleDate < prevPeriodEnd);
+
+                // Calculate metrics
+                var metrics = new DashboardMetricsViewModel
+                {
+                    SalesTransactions = await currentQuery.CountAsync(),
+                    NetSales = await currentQuery.SumAsync(s => s.FinalTotal),
+                    DiscountAmount = await currentQuery.SumAsync(s => s.TotalDiscountAmount),
+                    ReturnAmount = await currentQuery.SumAsync(s => s.ReturnAmount ?? 0m)
+                };
+
+                // Calculate averages and ratios
+                metrics.AverageTransactionValue = metrics.SalesTransactions > 0
+                    ? metrics.NetSales / metrics.SalesTransactions
+                    : 0;
+
+                var previousNetSales = await previousQuery.SumAsync(s => s.FinalTotal);
+                metrics.SalesGrowthRate = previousNetSales > 0
+                    ? ((metrics.NetSales - previousNetSales) / previousNetSales) * 100
+                    : 0;
+
+                // Calculate gross profit
+                var totalCost = await currentQuery
+                    .SelectMany(s => s.SaleDetails)
+                    .SumAsync(sd => sd.OriginalUnitPrice * sd.Quantity);
+                metrics.GrossProfit = metrics.NetSales - totalCost;
+
+                // Get top products
+                metrics.TopProducts = await currentQuery
+                    .SelectMany(s => s.SaleDetails)
+                    .GroupBy(sd => sd.Product.ProductName)
+                    .Select(g => new TopProductViewModel
+                    {
+                        ProductName = g.Key,
+                        NetSales = g.Sum(sd => sd.LineFinalTotal),
+                        Quantity = g.Sum(sd => sd.Quantity)
+                    })
+                    .OrderByDescending(p => p.NetSales)
+                    .Take(5)
+                    .ToListAsync();
+
+                // Get top payment methods
+                metrics.TopPayments = await currentQuery
+                    .GroupBy(s => s.PaymentMethod)
+                    .Select(g => new TopPaymentViewModel
+                    {
+                        PaymentMethod = g.Key ?? "Unknown",
+                        NetIncome = g.Sum(s => s.FinalTotal - s.TotalDiscountAmount),
+                        TransactionCount = g.Count()
+                    })
+                    .OrderByDescending(p => p.NetIncome)
+                    .Take(5)
+                    .ToListAsync();
+
+                // Get top categories
+                metrics.TopCategories = await currentQuery
+                    .SelectMany(s => s.SaleDetails)
+                    .GroupBy(sd => sd.Product.Category.CategoryName)
+                    .Select(g => new TopCategoryViewModel
+                    {
+                        CategoryName = g.Key,
+                        SalesVolume = g.Sum(sd => sd.Quantity),
+                        NetSales = g.Sum(sd => sd.LineFinalTotal)
+                    })
+                    .OrderByDescending(c => c.SalesVolume)
+                    .Take(5)
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = metrics });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, error = "Error retrieving dashboard data", details = ex.Message });
+                return StatusCode(500, new {
+                    success = false,
+                    error = "Error retrieving dashboard data",
+                    details = ex.Message
+                });
             }
         }
 
