@@ -58,5 +58,8 @@ namespace GroceryMateApi.Models
         public ICollection<SaleDetail> SaleDetails { get; set; } = new List<SaleDetail>();
 
         public Invoice? Invoice { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? ReturnAmount { get; set; } // Add this property
     }
 }
