@@ -31,6 +31,7 @@ namespace GroceryMateApi.Data
         public DbSet<Sale> Sales { get; set; } = null!;
         public DbSet<SaleDetail> SaleDetails { get; set; } = null!;
         public DbSet<Invoice> Invoices { get; set; } = null!;
+        public DbSet<Expense> Expenses { get; set; } = null!; // Add this line
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -156,6 +157,9 @@ namespace GroceryMateApi.Data
                 entity.HasIndex(s => s.SaleDate);
                 entity.HasIndex(s => s.InvoiceNumber).IsUnique();
                 entity.HasIndex(s => s.CreatedAt);
+
+                // Add ReturnAmount column
+                entity.Property(s => s.ReturnAmount).HasPrecision(18, 2).IsRequired(false);
             });
 
             // Seed data
@@ -620,6 +624,15 @@ namespace GroceryMateApi.Data
                 .WithMany(b => b.Products)
                 .HasForeignKey(p => p.BrandID)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Expenses table configuration
+            modelBuilder.Entity<Expense>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Amount).HasPrecision(18, 2);
+                entity.Property(e => e.Date).IsRequired();
+                entity.Property(e => e.Description).HasMaxLength(500);
+            });
 
             base.OnModelCreating(modelBuilder); // Call base only if extending a base context
         }
