@@ -33,6 +33,7 @@ namespace GroceryMateApi.Controllers
                     .Include(p => p.Brand)
                     .Include(p => p.Category)
                     .Include(p => p.Supplier)
+                    .Include(p => p.ProductBatches) // Include batches for stock calculation
                     .AsQueryable();
 
                 if (!string.IsNullOrEmpty(search))
@@ -63,7 +64,7 @@ namespace GroceryMateApi.Controllers
                         brand = p.Brand.BrandName,
                         category = p.Category.CategoryName,
                         supplier = p.Supplier.SupplierName,
-                        quantity = p.StockQuantity,
+                        quantity = p.ProductBatches.Sum(pb => pb.StockQuantity), // Use batches for stock
                         reorderLevel = p.ReorderLevel,
                         price = p.UnitPrice,
                         discountPercentage = p.DiscountPercentage,
@@ -91,7 +92,8 @@ namespace GroceryMateApi.Controllers
                 var query = _context.Products
                     .Include(p => p.Category)
                     .Include(p => p.Brand)
-                    .Where(p => p.StockQuantity <= LOW_STOCK_THRESHOLD);  // Fixed threshold of 10
+                    .Include(p => p.ProductBatches)
+                    .Where(p => p.ProductBatches.Sum(pb => pb.StockQuantity) <= LOW_STOCK_THRESHOLD);
 
                 if (!string.IsNullOrEmpty(search))
                 {
@@ -119,14 +121,13 @@ namespace GroceryMateApi.Controllers
                         brand = p.Brand.BrandName,
                         category = p.Category.CategoryName,
                         price = p.UnitPrice,
-                        stockQuantity = p.StockQuantity,
+                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity),
                         barcode = p.Barcode,
                         lowStockThreshold = LOW_STOCK_THRESHOLD,
-                        imageUrl = p.ImageUrl ?? "/images/products/default.jpg"  // Added imageUrl field
+                        imageUrl = p.ImageUrl ?? "/images/products/default.jpg"
                     })
                     .ToListAsync();
 
-                // Log the query for debugging
                 _logger.LogInformation($"Low stock query returned {products.Count} products");
 
                 return Ok(new { success = true, data = products });
@@ -145,6 +146,7 @@ namespace GroceryMateApi.Controllers
             try
             {
                 var product = await _context.Products
+                    .Include(p => p.ProductBatches)
                     .Include(p => p.Category)
                     .FirstOrDefaultAsync(p => p.ProductID == request.ProductID);
 
@@ -159,9 +161,16 @@ namespace GroceryMateApi.Controllers
                     return Unauthorized(new { success = false, message = "User not authenticated" });
                 }
 
+                // Find batch to restock (e.g., latest batch or create new batch logic)
+                var batch = product.ProductBatches.OrderByDescending(pb => pb.ExpirationDate).FirstOrDefault();
+                if (batch == null)
+                {
+                    return BadRequest(new { success = false, message = "No batch found for product. Please create a batch first." });
+                }
+
                 var transaction = new InventoryTransaction
                 {
-                    ProductID = request.ProductID,
+                    ProductBatchID = batch.BatchID,
                     Quantity = request.Quantity,
                     TransactionDate = DateTime.UtcNow,
                     TransactionType = "Restock",
@@ -170,7 +179,7 @@ namespace GroceryMateApi.Controllers
                 };
 
                 _context.InventoryTransactions.Add(transaction);
-                product.StockQuantity += request.Quantity;
+                batch.StockQuantity += request.Quantity;
 
                 await _context.SaveChangesAsync();
 
@@ -189,12 +198,19 @@ namespace GroceryMateApi.Controllers
         {
             try
             {
-                var product = await _context.Products.FindAsync(request.ProductID);
+                var product = await _context.Products
+                    .Include(p => p.ProductBatches)
+                    .FirstOrDefaultAsync(p => p.ProductID == request.ProductID);
+
                 if (product == null)
                     return NotFound(new { success = false, message = "Product not found" });
 
-                if (product.StockQuantity < request.Quantity)
-                    return BadRequest(new { success = false, message = $"Insufficient stock. Current stock: {product.StockQuantity}" });
+                var batch = product.ProductBatches.OrderByDescending(pb => pb.ExpirationDate).FirstOrDefault();
+                if (batch == null)
+                    return BadRequest(new { success = false, message = "No batch found for product. Please create a batch first." });
+
+                if (batch.StockQuantity < request.Quantity)
+                    return BadRequest(new { success = false, message = $"Insufficient stock. Current stock: {batch.StockQuantity}" });
 
                 var userId = GetCurrentUserId();
                 if (userId == 0)
@@ -204,7 +220,7 @@ namespace GroceryMateApi.Controllers
 
                 var transaction = new InventoryTransaction
                 {
-                    ProductID = request.ProductID,
+                    ProductBatchID = batch.BatchID,
                     Quantity = request.Quantity,
                     TransactionDate = DateTime.UtcNow,
                     TransactionType = "Spoilage",
@@ -212,7 +228,7 @@ namespace GroceryMateApi.Controllers
                     Notes = request.Notes
                 };
 
-                product.StockQuantity -= request.Quantity;
+                batch.StockQuantity -= request.Quantity;
                 _context.InventoryTransactions.Add(transaction);
                 await _context.SaveChangesAsync();
 
@@ -232,13 +248,14 @@ namespace GroceryMateApi.Controllers
             try
             {
                 var transactions = await _context.InventoryTransactions
-                    .Include(t => t.Product)
+                    .Include(t => t.ProductBatch)
+                        .ThenInclude(pb => pb.Product)
                     .Include(t => t.User)
                     .OrderByDescending(t => t.TransactionDate)
                     .Select(t => new
                     {
                         id = t.TransactionID,
-                        productName = t.Product.ProductName,
+                        productName = t.ProductBatch.Product.ProductName,
                         quantity = t.Quantity,
                         transactionType = t.TransactionType,
                         transactionDate = t.TransactionDate,
@@ -256,6 +273,115 @@ namespace GroceryMateApi.Controllers
             }
         }
 
+        [HttpGet("dashboard")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetInventoryDashboard(
+            [FromQuery] string period = "month",
+            [FromQuery] int? year = null,
+            [FromQuery] int? month = null,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] DateTime? date = null,
+            [FromQuery] string stockFilter = "All Time")
+        {
+            try
+            {
+                var today = DateTime.UtcNow;
+                var (periodStart, periodEnd) = period.ToLower() switch
+                {
+                    "week" => (today.AddDays(-7), today.AddDays(1)),
+                    "month" when year.HasValue && month.HasValue => (
+                        new DateTime(year.Value, month.Value, 1),
+                        new DateTime(year.Value, month.Value, 1).AddMonths(1)),
+                    "custom" when startDate.HasValue && endDate.HasValue => (startDate.Value, endDate.Value.AddDays(1)),
+                    _ => (date?.Date ?? today, (date?.Date ?? today).AddDays(1))
+                };
+
+                var query = _context.ProductBatches
+                    .Include(pb => pb.Product).ThenInclude(p => p.Category)
+                    .AsQueryable();
+
+                // Stock age filters
+                if (stockFilter != "All Time")
+                {
+                    if (stockFilter == "Last 30 Days")
+                        query = query.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 30);
+                    else if (stockFilter == "30-60 Days")
+                        query = query.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) >= 31 && EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 60);
+                    else if (stockFilter == "60-90 Days")
+                        query = query.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) >= 61 && EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 90);
+                    else if (stockFilter == "Near Expiry (<30 Days)")
+                        query = query.Where(pb => EF.Functions.DateDiffDay(today, pb.ExpirationDate) <= 30);
+                    else if (stockFilter == "Expired")
+                        query = query.Where(pb => pb.ExpirationDate < today);
+                }
+
+                var salesQuery = _context.SaleDetails
+                    .Include(sd => sd.Sale)
+                    .Where(sd => sd.Sale.SaleDate >= periodStart && sd.Sale.SaleDate < periodEnd);
+
+                var inventoryTransactionsQuery = _context.InventoryTransactions
+                    .Include(it => it.ProductBatch)
+                    .Where(it => it.TransactionDate >= today.AddMonths(-3));
+
+                var inventoryData = new InventoryMetricsViewModel
+                {
+                    LowStockCount = await query.CountAsync(pb => pb.StockQuantity < pb.Product.ReorderLevel),
+                    TurnoverRate = await salesQuery
+                        .GroupBy(sd => sd.ProductID)
+                        .Select(g => query.Where(pb => pb.ProductID == g.Key).Sum(pb => pb.StockQuantity) > 0
+                            ? g.Sum(sd => sd.Quantity) / (decimal)query.Where(pb => pb.ProductID == g.Key).Sum(pb => pb.StockQuantity)
+                            : 0)
+                        .DefaultIfEmpty(0).AverageAsync(),
+                    OverstockCount = await query.CountAsync(pb => pb.StockQuantity > 2 * pb.Product.ReorderLevel),
+                    AvgStockAge = await query.AnyAsync()
+                        ? await query.AverageAsync(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today))
+                        : 0,
+                    StockValue = await query
+                        .GroupBy(pb => pb.Product.Category.CategoryName)
+                        .Select(g => new { Category = g.Key, Value = g.Sum(pb => pb.StockQuantity * pb.Product.UnitPrice) })
+                        .ToDictionaryAsync(g => g.Category, g => g.Value),
+                    RestockFrequency = await inventoryTransactionsQuery
+                        .GroupBy(it => new { it.TransactionDate.Year, it.TransactionDate.Month })
+                        .Select(g => g.Count())
+                        .DefaultIfEmpty(0).AverageAsync(),
+                    TopSlowMovingProducts = await query
+                        .OrderBy(pb => salesQuery.Where(sd => sd.ProductID == pb.ProductID).Sum(sd => sd.Quantity))
+                        .Take(5)
+                        .Select(pb => new ProductSummary
+                        {
+                            ProductName = pb.Product.ProductName,
+                            ExpirationDate = pb.ExpirationDate,
+                            LastSoldDate = salesQuery.Where(sd => sd.ProductID == pb.ProductID)
+                                .OrderByDescending(sd => sd.Sale.SaleDate)
+                                .Select(sd => (DateTime?)sd.Sale.SaleDate)
+                                .FirstOrDefault()
+                        })
+                        .ToListAsync(),
+                    OutageRiskCount = await query
+                        .Join(salesQuery, pb => pb.ProductID, sd => sd.ProductID, (pb, sd) => new { pb, sd })
+                        .GroupBy(x => x.pb.ProductID)
+                        .Select(g => new
+                        {
+                            ProductID = g.Key,
+                            AvgDailySales = g.Sum(x => x.sd.Quantity) / 30m
+                        })
+                        .Join(query, g => g.ProductID, pb => pb.ProductID, (g, pb) => new { pb, g.AvgDailySales })
+                        .CountAsync(x => x.pb.StockQuantity < x.AvgDailySales),
+                    ExpiredValue = await query
+                        .Where(pb => pb.ExpirationDate < today)
+                        .SumAsync(pb => pb.StockQuantity * pb.Product.UnitPrice)
+                };
+
+                return Ok(new { success = true, data = inventoryData });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching inventory dashboard");
+                return StatusCode(500, new { success = false, error = "Error loading inventory dashboard" });
+            }
+        }
+
         private int GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -268,5 +394,25 @@ namespace GroceryMateApi.Controllers
         public int ProductID { get; set; }
         public int Quantity { get; set; }
         public string? Notes { get; set; }
+    }
+
+    public class InventoryMetricsViewModel
+    {
+        public int LowStockCount { get; set; }
+        public decimal TurnoverRate { get; set; }
+        public int OverstockCount { get; set; }
+        public double AvgStockAge { get; set; }
+        public Dictionary<string, decimal> StockValue { get; set; } = new();
+        public double RestockFrequency { get; set; }
+        public List<ProductSummary> TopSlowMovingProducts { get; set; } = new();
+        public int OutageRiskCount { get; set; }
+        public decimal ExpiredValue { get; set; }
+    }
+
+    public class ProductSummary
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public DateTime ExpirationDate { get; set; }
+        public DateTime? LastSoldDate { get; set; }
     }
 }
