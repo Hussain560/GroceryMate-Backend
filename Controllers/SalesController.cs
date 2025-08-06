@@ -161,20 +161,38 @@ namespace GroceryMateApi.Controllers
 
                 foreach (var item in request.Items)
                 {
-                    var product = await _context.Products.FindAsync(item.ProductID);
+                    var product = await _context.Products
+                        .Include(p => p.ProductBatches)
+                        .FirstOrDefaultAsync(p => p.ProductID == item.ProductID);
+
                     if (product == null)
                     {
                         await transaction.RollbackAsync();
                         return BadRequest(new { success = false, error = $"Product not found: {item.ProductID}" });
                     }
 
-                    if (product.StockQuantity < item.Quantity)
+                    var totalStock = product.ProductBatches.Sum(pb => pb.StockQuantity);
+                    if (totalStock < item.Quantity)
                     {
                         await transaction.RollbackAsync();
                         return BadRequest(new { success = false, error = $"Insufficient stock for {product.ProductName}" });
                     }
 
-                    product.StockQuantity -= item.Quantity;
+                    // Deduct quantity from batches (FIFO)
+                    int qtyToDeduct = item.Quantity;
+                    foreach (var batch in product.ProductBatches.OrderBy(pb => pb.ExpirationDate))
+                    {
+                        if (batch.StockQuantity >= qtyToDeduct)
+                        {
+                            batch.StockQuantity -= qtyToDeduct;
+                            break;
+                        }
+                        else
+                        {
+                            qtyToDeduct -= batch.StockQuantity;
+                            batch.StockQuantity = 0;
+                        }
+                    }
 
                     decimal lineSubtotalBeforeDiscount = item.Subtotal;
                     decimal lineDiscountAmount = lineSubtotalBeforeDiscount * (item.DiscountPercentage / 100M);
@@ -237,7 +255,8 @@ namespace GroceryMateApi.Controllers
 
                 var product = await _context.Products
                     .Include(p => p.Brand)
-                    .Where(p => p.Barcode == barcode && p.StockQuantity > 0)
+                    .Include(p => p.ProductBatches)
+                    .Where(p => p.Barcode == barcode && p.ProductBatches.Sum(pb => pb.StockQuantity) > 0)
                     .Select(p => new
                     {
                         productID = p.ProductID,
@@ -247,7 +266,7 @@ namespace GroceryMateApi.Controllers
                         price = p.UnitPrice,
                         unitPrice = p.UnitPrice,
                         discountPercentage = p.DiscountPercentage,
-                        stockQuantity = p.StockQuantity,
+                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity),
                         imageUrl = p.ImageUrl,
                         barcode = p.Barcode
                     })
