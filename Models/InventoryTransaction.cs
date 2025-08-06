@@ -9,8 +9,8 @@ namespace GroceryMateApi.Models
         public int TransactionID { get; set; }
 
         [Required]
-        public int ProductID { get; set; }
-        public Product Product { get; set; } = null!;
+        public int ProductBatchID { get; set; } // Changed from ProductID
+        public ProductBatch ProductBatch { get; set; } = null!;
 
         [Required]
         [StringLength(20)]
@@ -33,4 +33,3 @@ namespace GroceryMateApi.Models
         public virtual ApplicationUser User { get; set; } = null!;
     }
 }
-
