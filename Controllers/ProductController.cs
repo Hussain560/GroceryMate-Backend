@@ -29,6 +29,7 @@ namespace GroceryMateApi.Controllers
                     .Include(p => p.Category)
                     .Include(p => p.Brand)
                     .Include(p => p.Supplier)
+                    .Include(p => p.ProductBatches)
                     .AsQueryable();
 
                 if (!string.IsNullOrEmpty(search))
@@ -60,7 +61,7 @@ namespace GroceryMateApi.Controllers
                         supplier = p.Supplier.SupplierName,
                         unitPrice = p.UnitPrice,
                         discountPercentage = p.DiscountPercentage,
-                        stockQuantity = p.StockQuantity,
+                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity), // FIX: use batches
                         reorderLevel = p.ReorderLevel,
                         barcode = p.Barcode,
                         imageUrl = p.ImageUrl,
@@ -86,6 +87,7 @@ namespace GroceryMateApi.Controllers
                     .Include(p => p.Category)
                     .Include(p => p.Brand)
                     .Include(p => p.Supplier)
+                    .Include(p => p.ProductBatches)
                     .Where(p => p.ProductID == id)
                     .Select(p => new
                     {
@@ -96,7 +98,7 @@ namespace GroceryMateApi.Controllers
                         supplierId = p.SupplierID,
                         unitPrice = p.UnitPrice,
                         discountPercentage = p.DiscountPercentage,
-                        stockQuantity = p.StockQuantity,
+                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity), // FIX
                         reorderLevel = p.ReorderLevel,
                         barcode = p.Barcode,
                         imageUrl = p.ImageUrl,
@@ -132,7 +134,6 @@ namespace GroceryMateApi.Controllers
                     SupplierID = request.SupplierID,
                     UnitPrice = request.UnitPrice,
                     DiscountPercentage = request.DiscountPercentage,
-                    StockQuantity = request.StockQuantity,
                     ReorderLevel = request.ReorderLevel,
                     Barcode = request.Barcode,
                     ImageUrl = request.ImageUrl,
@@ -141,6 +142,8 @@ namespace GroceryMateApi.Controllers
 
                 _context.Products.Add(product);
                 await _context.SaveChangesAsync();
+
+                // Optionally, create initial ProductBatch here if needed
 
                 return Ok(new { success = true, message = "Product created successfully", productId = product.ProductID });
             }
@@ -166,7 +169,6 @@ namespace GroceryMateApi.Controllers
                 product.SupplierID = request.SupplierID;
                 product.UnitPrice = request.UnitPrice;
                 product.DiscountPercentage = request.DiscountPercentage;
-                product.StockQuantity = request.StockQuantity;
                 product.ReorderLevel = request.ReorderLevel;
                 product.Barcode = request.Barcode;
                 product.ImageUrl = request.ImageUrl;
@@ -210,7 +212,8 @@ namespace GroceryMateApi.Controllers
             {
                 var product = await _context.Products
                     .Include(p => p.Brand)
-                    .Where(p => p.Barcode == barcode && p.StockQuantity > 0)
+                    .Include(p => p.ProductBatches)
+                    .Where(p => p.Barcode == barcode && p.ProductBatches.Sum(pb => pb.StockQuantity) > 0)
                     .Select(p => new
                     {
                         productId = p.ProductID,
@@ -218,7 +221,7 @@ namespace GroceryMateApi.Controllers
                         brand = p.Brand.BrandName,
                         unitPrice = p.UnitPrice,
                         discountPercentage = p.DiscountPercentage,
-                        stockQuantity = p.StockQuantity,
+                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity),
                         imageUrl = p.ImageUrl
                     })
                     .FirstOrDefaultAsync();
@@ -241,13 +244,14 @@ namespace GroceryMateApi.Controllers
             try
             {
                 var products = await _context.Products
-                    .Where(p => p.ProductName.Contains(q) && p.StockQuantity > 0)
+                    .Include(p => p.ProductBatches)
+                    .Where(p => p.ProductName.Contains(q) && p.ProductBatches.Sum(pb => pb.StockQuantity) > 0)
                     .Select(p => new
                     {
                         p.ProductID,
                         p.ProductName,
                         p.UnitPrice,
-                        p.StockQuantity,
+                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity),
                         p.DiscountPercentage
                     })
                     .Take(10)

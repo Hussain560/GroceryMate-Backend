@@ -46,6 +46,7 @@ namespace GroceryMateApi.Controllers
             {
                 var products = await _context.Products
                     .Include(p => p.Brand)
+                    .Include(p => p.ProductBatches)
                     .Where(p => p.CategoryID == id)
                     .OrderBy(p => p.ProductName)
                     .Select(p => new { 
@@ -54,7 +55,7 @@ namespace GroceryMateApi.Controllers
                         brand = p.Brand.BrandName,
                         price = p.UnitPrice, 
                         discountPercentage = p.DiscountPercentage,
-                        stock = p.StockQuantity,
+                        stock = p.ProductBatches.Sum(pb => pb.StockQuantity), // FIX: use batches
                         imageUrl = p.ImageUrl ?? "/images/products/default.jpg",
                         barcode = p.Barcode ?? "N/A"
                     })
