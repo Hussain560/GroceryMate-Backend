@@ -66,9 +66,54 @@ namespace GroceryMateApi.Controllers
                             .ThenInclude(p => p.Category)
                     .Where(s => s.SaleDate >= periodStart && s.SaleDate < periodEnd);
 
-                // Previous period query for growth calculation
-                var previousQuery = _context.Sales
-                    .Where(s => s.SaleDate >= prevPeriodStart && s.SaleDate < prevPeriodEnd);
+                // Inventory batch queries for dashboard metrics
+                var batchQuery = _context.ProductBatches
+                    .Include(pb => pb.Product)
+                        .ThenInclude(p => p.Category)
+                    .AsQueryable();
+
+                // Example: Get total stock from batches for dashboard metrics
+                var totalStock = await batchQuery.SumAsync(pb => pb.StockQuantity);
+
+                // Example: Get low stock count using batch and product reorder level
+                var lowStockCount = await batchQuery.CountAsync(pb => pb.StockQuantity < pb.Product.ReorderLevel);
+
+                // Example: Get overstock count using batch and product reorder level
+                var overstockCount = await batchQuery.CountAsync(pb => pb.StockQuantity > 2 * pb.Product.ReorderLevel);
+
+                // Example: Get expired batch value
+                var today = DateTime.UtcNow;
+                var expiredValue = await batchQuery
+                    .Where(pb => pb.ExpirationDate < today)
+                    .SumAsync(pb => pb.StockQuantity * pb.Product.UnitPrice);
+
+                // Example: Get average stock age
+                var avgStockAge = await batchQuery.AnyAsync()
+                    ? await batchQuery.AverageAsync(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today))
+                    : 0;
+
+                // Example: Get restock frequency (last 3 months)
+                var restockFrequency = await _context.InventoryTransactions
+                    .Where(it => it.TransactionDate >= today.AddMonths(-3))
+                    .GroupBy(it => new { it.TransactionDate.Year, it.TransactionDate.Month })
+                    .Select(g => g.Count())
+                    .DefaultIfEmpty(0).AverageAsync();
+
+                // Example: Top slow moving products by batch
+                var topSlowMovingProducts = await batchQuery
+                    .OrderBy(pb => _context.SaleDetails.Where(sd => sd.ProductID == pb.ProductID).Sum(sd => sd.Quantity))
+                    .Take(5)
+                    .Select(pb => new
+                    {
+                        pb.Product.ProductName,
+                        pb.ExpirationDate,
+                        LastSoldDate = _context.SaleDetails
+                            .Where(sd => sd.ProductID == pb.ProductID)
+                            .OrderByDescending(sd => sd.Sale.SaleDate)
+                            .Select(sd => (DateTime?)sd.Sale.SaleDate)
+                            .FirstOrDefault()
+                    })
+                    .ToListAsync();
 
                 // Calculate metrics
                 var metrics = new DashboardMetricsViewModel
@@ -84,7 +129,9 @@ namespace GroceryMateApi.Controllers
                     ? metrics.NetSales / metrics.SalesTransactions
                     : 0;
 
-                var previousNetSales = await previousQuery.SumAsync(s => s.FinalTotal);
+                var previousNetSales = await _context.Sales
+                    .Where(s => s.SaleDate >= prevPeriodStart && s.SaleDate < prevPeriodEnd)
+                    .SumAsync(s => s.FinalTotal);
                 metrics.SalesGrowthRate = previousNetSales > 0
                     ? ((metrics.NetSales - previousNetSales) / previousNetSales) * 100
                     : 0;
@@ -94,6 +141,31 @@ namespace GroceryMateApi.Controllers
                     .SelectMany(s => s.SaleDetails)
                     .SumAsync(sd => sd.OriginalUnitPrice * sd.Quantity);
                 metrics.GrossProfit = metrics.NetSales - totalCost;
+
+                // Hourly sales for "day" period
+                if (period.ToLower() == "day")
+                {
+                    var day = date?.Date ?? currentDate;
+                    var hourlySales = await _context.Sales
+                        .Where(s => s.SaleDate >= day && s.SaleDate < day.AddDays(1))
+                        .GroupBy(s => s.SaleDate.Hour)
+                        .Select(g => new HourlySalesViewModel
+                        {
+                            Hour = g.Key,
+                            NetSales = g.Sum(s => s.FinalTotal)
+                        })
+                        .ToListAsync();
+
+                    // Fill missing hours with 0 sales
+                    metrics.HourlySales = Enumerable.Range(0, 24)
+                        .Select(h => hourlySales.FirstOrDefault(x => x.Hour == h) ?? new HourlySalesViewModel { Hour = h, NetSales = 0 })
+                        .OrderBy(x => x.Hour)
+                        .ToList();
+                }
+                else
+                {
+                    metrics.HourlySales = new List<HourlySalesViewModel>();
+                }
 
                 // Get top products
                 metrics.TopProducts = await currentQuery
@@ -136,7 +208,22 @@ namespace GroceryMateApi.Controllers
                     .Take(5)
                     .ToListAsync();
 
-                return Ok(new { success = true, data = metrics });
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        // ...existing metrics...
+                        LowStockCount = lowStockCount,
+                        OverstockCount = overstockCount,
+                        ExpiredValue = expiredValue,
+                        AvgStockAge = avgStockAge,
+                        RestockFrequency = restockFrequency,
+                        TopSlowMovingProducts = topSlowMovingProducts,
+                        TotalStockQuantity = totalStock
+                        // ...other metrics...
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -156,7 +243,7 @@ namespace GroceryMateApi.Controllers
                 var metrics = new
                 {
                     totalSales = await _context.Sales.SumAsync(s => s.FinalTotal),
-                    stockAlerts = await _context.Products.CountAsync(p => p.StockQuantity < p.ReorderLevel),
+                    stockAlerts = await _context.Products.CountAsync(p => p.ProductBatches.Any(pb => pb.StockQuantity < p.ReorderLevel)),
                     payments = new
                     {
                         cash = await _context.Sales.Where(s => s.PaymentMethod == "Cash").SumAsync(s => s.FinalTotal),
