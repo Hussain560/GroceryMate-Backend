@@ -16,6 +16,7 @@ namespace GroceryMateApi.ViewModels
         public IEnumerable<TopProductViewModel> TopProducts { get; set; } = new List<TopProductViewModel>();
         public IEnumerable<TopPaymentViewModel> TopPayments { get; set; } = new List<TopPaymentViewModel>();
         public IEnumerable<TopCategoryViewModel> TopCategories { get; set; } = new List<TopCategoryViewModel>();
+        public List<HourlySalesViewModel> HourlySales { get; set; } = new List<HourlySalesViewModel>();
     }
 
     public class TopProductViewModel
@@ -36,6 +37,12 @@ namespace GroceryMateApi.ViewModels
     {
         public string CategoryName { get; set; } = string.Empty;
         public int SalesVolume { get; set; }
+        public decimal NetSales { get; set; }
+    }
+
+    public class HourlySalesViewModel
+    {
+        public int Hour { get; set; }
         public decimal NetSales { get; set; }
     }
 }
