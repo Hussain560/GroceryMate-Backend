@@ -30,7 +30,7 @@ namespace GroceryMateApi.Models
         [Column(TypeName = "decimal(5,2)")]
         public decimal DiscountPercentage { get; set; }
 
-        public int StockQuantity { get; set; }
+        public int? TotalStockQuantity { get; set; }
 
         public int ReorderLevel { get; set; }
 
@@ -44,5 +44,6 @@ namespace GroceryMateApi.Models
 
         public ICollection<SaleDetail> SaleDetails { get; set; } = new List<SaleDetail>();
         public ICollection<InventoryTransaction> InventoryTransactions { get; set; } = new List<InventoryTransaction>();
+        public ICollection<ProductBatch> ProductBatches { get; set; } = new List<ProductBatch>();
     }
 }
