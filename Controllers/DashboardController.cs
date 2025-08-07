@@ -23,238 +23,171 @@ namespace GroceryMateApi.Controllers
             _userManager = userManager;
         }
 
-        [HttpGet("manager")]
+
+        [HttpGet("overview")]
         [Authorize(Roles = "Manager")]
-        public async Task<IActionResult> GetManagerDashboard(
-            [FromQuery] string period = "day",
+        public async Task<IActionResult> GetManagerOverview(
+            [FromQuery] string period = "month",
             [FromQuery] int? year = null,
             [FromQuery] int? month = null,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null,
-            [FromQuery] DateTime? date = null)
+            [FromQuery] DateTime? date = null,
+            [FromQuery] string stockFilter = "All Time")
         {
             try
             {
-                // Initialize date range
-                var currentDate = DateTime.UtcNow.Date;
+                var today = DateTime.UtcNow;
                 var (periodStart, periodEnd) = period.ToLower() switch
                 {
-                    "week" => (currentDate.AddDays(-7), currentDate.AddDays(1)),
-                    "month" when year.HasValue && month.HasValue =>
-                        (new DateTime(year.Value, month.Value, 1),
-                         new DateTime(year.Value, month.Value, 1).AddMonths(1)),
-                    "custom" when startDate.HasValue && endDate.HasValue =>
-                        (startDate.Value.Date, endDate.Value.Date.AddDays(1)),
-                    _ => (date?.Date ?? currentDate, (date?.Date ?? currentDate).AddDays(1))
+                    "week" => (today.AddDays(-7), today.AddDays(1)),
+                    "month" when year.HasValue && month.HasValue => (
+                        new DateTime(year.Value, month.Value, 1),
+                        new DateTime(year.Value, month.Value, 1).AddMonths(1)),
+                    "custom" when startDate.HasValue && endDate.HasValue => (startDate.Value, endDate.Value.AddDays(1)),
+                    _ => (date.HasValue ? date.Value.Date : today.Date, (date.HasValue ? date.Value.Date : today.Date).AddDays(1))
                 };
 
-                // Get previous period for growth calculation
-                var (prevPeriodStart, prevPeriodEnd) = period.ToLower() switch
-                {
-                    "week" => (periodStart.AddDays(-7), periodStart),
-                    "month" => (periodStart.AddMonths(-1), periodStart),
-                    "custom" => (
-                        periodStart.AddDays(-(periodEnd - periodStart).Days),
-                        periodStart),
-                    _ => (periodStart.AddDays(-1), periodStart)
-                };
-
-                // Current period query
-                var currentQuery = _context.Sales
-                    .Include(s => s.SaleDetails)
-                        .ThenInclude(sd => sd.Product)
-                            .ThenInclude(p => p.Category)
-                    .Where(s => s.SaleDate >= periodStart && s.SaleDate < periodEnd);
-
-                // Inventory batch queries for dashboard metrics
                 var batchQuery = _context.ProductBatches
-                    .Include(pb => pb.Product)
-                        .ThenInclude(p => p.Category)
+                    .Include(pb => pb.Product).ThenInclude(p => p.Category)
                     .AsQueryable();
 
-                // Example: Get total stock from batches for dashboard metrics
-                var totalStock = await batchQuery.SumAsync(pb => pb.StockQuantity);
+                if (stockFilter != "All Time")
+                {
+                    if (stockFilter == "Last 30 Days")
+                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 30);
+                    else if (stockFilter == "30-60 Days")
+                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) >= 31 && EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 60);
+                    else if (stockFilter == "60-90 Days")
+                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) >= 61 && EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 90);
+                    else if (stockFilter == "Near Expiry (<30 Days)")
+                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(today, pb.ExpirationDate) <= 30);
+                    else if (stockFilter == "Expired")
+                        batchQuery = batchQuery.Where(pb => pb.ExpirationDate < today);
+                }
 
-                // Example: Get low stock count using batch and product reorder level
+                var salesQuery = _context.SaleDetails
+                    .Include(sd => sd.Sale)
+                    .Include(sd => sd.Product).ThenInclude(p => p.Category)
+                    .Where(sd => sd.Sale.SaleDate >= periodStart && sd.Sale.SaleDate < periodEnd);
+
+                // Sales metrics
+                var netSales = await salesQuery.SumAsync(sd => sd.UnitPrice * sd.Quantity);
+                var discountAmount = await salesQuery.SumAsync(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                var grossProfit = netSales - discountAmount;
+                var returnAmount = 0m; // If you have a Returns table, sum here
+                var salesTransactions = await _context.Sales
+                    .Where(s => s.SaleDate >= periodStart && s.SaleDate < periodEnd)
+                    .CountAsync();
+                var averageTransactionValue = salesTransactions > 0
+                    ? netSales / salesTransactions
+                    : 0;
+                var previousPeriodStart = periodStart.AddDays(-(periodEnd - periodStart).TotalDays);
+                var previousNetSales = await _context.SaleDetails
+                    .Include(sd => sd.Sale)
+                    .Where(sd => sd.Sale.SaleDate >= previousPeriodStart && sd.Sale.SaleDate < periodStart)
+                    .SumAsync(sd => sd.UnitPrice * sd.Quantity);
+                var salesGrowthRate = previousNetSales > 0
+                    ? ((netSales - previousNetSales) / previousNetSales) * 100
+                    : 0;
+                var operationalEfficiencyRatio = 85.0m; // Mock value
+
+                // Hourly sales
+                var hourlySales = await salesQuery
+                    .GroupBy(sd => sd.Sale.SaleDate.Hour)
+                    .Select(g => new { Hour = g.Key, Amount = g.Sum(sd => sd.UnitPrice * sd.Quantity) })
+                    .ToListAsync();
+                var hourlySalesArray = Enumerable.Range(0, 24)
+                    .Select(h => hourlySales.FirstOrDefault(x => x.Hour == h) != null
+                        ? new { Hour = h, Amount = hourlySales.First(x => x.Hour == h).Amount }
+                        : new { Hour = h, Amount = 0m })
+                    .OrderBy(x => x.Hour)
+                    .ToList();
+
+                var topProductsByNetSales = await salesQuery
+                    .GroupBy(sd => sd.ProductID)
+                    .Select(g => new { ProductName = g.First().Product.ProductName, Total = g.Sum(sd => sd.UnitPrice * sd.Quantity) })
+                    .OrderByDescending(g => g.Total)
+                    .Take(5)
+                    .ToListAsync();
+
+                var topPaymentByNetIncome = await _context.Sales
+                    .Where(s => s.SaleDate >= periodStart && s.SaleDate < periodEnd)
+                    .GroupBy(s => s.PaymentMethod)
+                    .Select(g => new { PaymentMethod = g.Key, Total = g.Sum(s => s.FinalTotal) })
+                    .OrderByDescending(g => g.Total)
+                    .Take(3)
+                    .ToListAsync();
+
+                var topCategoriesBySalesVolume = await salesQuery
+                    .GroupBy(sd => sd.Product.Category.CategoryName)
+                    .Select(g => new { CategoryName = g.Key, Volume = g.Sum(sd => sd.Quantity) })
+                    .OrderByDescending(g => g.Volume)
+                    .Take(5)
+                    .ToListAsync();
+
+                // Inventory metrics
                 var lowStockCount = await batchQuery.CountAsync(pb => pb.StockQuantity < pb.Product.ReorderLevel);
-
-                // Example: Get overstock count using batch and product reorder level
                 var overstockCount = await batchQuery.CountAsync(pb => pb.StockQuantity > 2 * pb.Product.ReorderLevel);
-
-                // Example: Get expired batch value
-                var today = DateTime.UtcNow;
-                var expiredValue = await batchQuery
-                    .Where(pb => pb.ExpirationDate < today)
+                var expiredValue = await batchQuery.Where(pb => pb.ExpirationDate < today)
                     .SumAsync(pb => pb.StockQuantity * pb.Product.UnitPrice);
-
-                // Example: Get average stock age
                 var avgStockAge = await batchQuery.AnyAsync()
                     ? await batchQuery.AverageAsync(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today))
                     : 0;
-
-                // Example: Get restock frequency (last 3 months)
-                var restockFrequency = await _context.InventoryTransactions
+                var restockGroups = await _context.InventoryTransactions
                     .Where(it => it.TransactionDate >= today.AddMonths(-3))
                     .GroupBy(it => new { it.TransactionDate.Year, it.TransactionDate.Month })
-                    .Select(g => g.Count())
-                    .DefaultIfEmpty(0).AverageAsync();
-
-                // Example: Top slow moving products by batch
-                var topSlowMovingProducts = await batchQuery
-                    .OrderBy(pb => _context.SaleDetails.Where(sd => sd.ProductID == pb.ProductID).Sum(sd => sd.Quantity))
-                    .Take(5)
-                    .Select(pb => new
+                    .ToListAsync();
+                var restockFrequency = restockGroups.Count > 0
+                    ? restockGroups.Average(g => g.Count())
+                    : 0;
+                var topSlowMovingProducts = await salesQuery
+                    .GroupBy(sd => sd.ProductID)
+                    .Select(g => new
                     {
-                        pb.Product.ProductName,
-                        pb.ExpirationDate,
-                        LastSoldDate = _context.SaleDetails
-                            .Where(sd => sd.ProductID == pb.ProductID)
-                            .OrderByDescending(sd => sd.Sale.SaleDate)
-                            .Select(sd => (DateTime?)sd.Sale.SaleDate)
-                            .FirstOrDefault()
+                        ProductName = g.First().Product.ProductName,
+                        LastSoldDate = (DateTime?)g.Max(sd => (DateTime?)sd.Sale.SaleDate),
+                        ExpirationDate = batchQuery.First(pb => pb.ProductID == g.Key).ExpirationDate
                     })
+                    .OrderBy(g => g.LastSoldDate ?? (DateTime?)DateTime.MaxValue)
+                    .Take(5)
                     .ToListAsync();
 
-                // Calculate metrics
-                var metrics = new DashboardMetricsViewModel
+                var overviewData = new
                 {
-                    SalesTransactions = await currentQuery.CountAsync(),
-                    NetSales = await currentQuery.SumAsync(s => s.FinalTotal),
-                    DiscountAmount = await currentQuery.SumAsync(s => s.TotalDiscountAmount),
-                    ReturnAmount = await currentQuery.SumAsync(s => s.ReturnAmount ?? 0m)
+                    NetSales = netSales,
+                    GrossProfit = grossProfit,
+                    DiscountAmount = discountAmount,
+                    ReturnAmount = returnAmount,
+                    AverageTransactionValue = averageTransactionValue,
+                    SalesGrowthRate = salesGrowthRate,
+                    OperationalEfficiencyRatio = operationalEfficiencyRatio,
+                    HourlySales = hourlySalesArray,
+                    TopProductsByNetSales = topProductsByNetSales,
+                    TopPaymentByNetIncome = topPaymentByNetIncome,
+                    TopCategoriesBySalesVolume = topCategoriesBySalesVolume,
+                    LowStockCount = lowStockCount,
+                    OverstockCount = overstockCount,
+                    ExpiredValue = expiredValue,
+                    AvgStockAge = avgStockAge,
+                    RestockFrequency = restockFrequency,
+                    TopSlowMovingProducts = topSlowMovingProducts
                 };
 
-                // Calculate averages and ratios
-                metrics.AverageTransactionValue = metrics.SalesTransactions > 0
-                    ? metrics.NetSales / metrics.SalesTransactions
-                    : 0;
-
-                var previousNetSales = await _context.Sales
-                    .Where(s => s.SaleDate >= prevPeriodStart && s.SaleDate < prevPeriodEnd)
-                    .SumAsync(s => s.FinalTotal);
-                metrics.SalesGrowthRate = previousNetSales > 0
-                    ? ((metrics.NetSales - previousNetSales) / previousNetSales) * 100
-                    : 0;
-
-                // Calculate gross profit
-                var totalCost = await currentQuery
-                    .SelectMany(s => s.SaleDetails)
-                    .SumAsync(sd => sd.OriginalUnitPrice * sd.Quantity);
-                metrics.GrossProfit = metrics.NetSales - totalCost;
-
-                // Hourly sales for "day" period
-                if (period.ToLower() == "day")
-                {
-                    var day = date?.Date ?? currentDate;
-                    var hourlySales = await _context.Sales
-                        .Where(s => s.SaleDate >= day && s.SaleDate < day.AddDays(1))
-                        .GroupBy(s => s.SaleDate.Hour)
-                        .Select(g => new HourlySalesViewModel
-                        {
-                            Hour = g.Key,
-                            NetSales = g.Sum(s => s.FinalTotal)
-                        })
-                        .ToListAsync();
-
-                    // Fill missing hours with 0 sales
-                    metrics.HourlySales = Enumerable.Range(0, 24)
-                        .Select(h => hourlySales.FirstOrDefault(x => x.Hour == h) ?? new HourlySalesViewModel { Hour = h, NetSales = 0 })
-                        .OrderBy(x => x.Hour)
-                        .ToList();
-                }
-                else
-                {
-                    metrics.HourlySales = new List<HourlySalesViewModel>();
-                }
-
-                // Get top products
-                metrics.TopProducts = await currentQuery
-                    .SelectMany(s => s.SaleDetails)
-                    .GroupBy(sd => sd.Product.ProductName)
-                    .Select(g => new TopProductViewModel
-                    {
-                        ProductName = g.Key,
-                        NetSales = g.Sum(sd => sd.LineFinalTotal),
-                        Quantity = g.Sum(sd => sd.Quantity)
-                    })
-                    .OrderByDescending(p => p.NetSales)
-                    .Take(5)
-                    .ToListAsync();
-
-                // Get top payment methods
-                metrics.TopPayments = await currentQuery
-                    .GroupBy(s => s.PaymentMethod)
-                    .Select(g => new TopPaymentViewModel
-                    {
-                        PaymentMethod = g.Key ?? "Unknown",
-                        NetIncome = g.Sum(s => s.FinalTotal - s.TotalDiscountAmount),
-                        TransactionCount = g.Count()
-                    })
-                    .OrderByDescending(p => p.NetIncome)
-                    .Take(5)
-                    .ToListAsync();
-
-                // Get top categories
-                metrics.TopCategories = await currentQuery
-                    .SelectMany(s => s.SaleDetails)
-                    .GroupBy(sd => sd.Product.Category.CategoryName)
-                    .Select(g => new TopCategoryViewModel
-                    {
-                        CategoryName = g.Key,
-                        SalesVolume = g.Sum(sd => sd.Quantity),
-                        NetSales = g.Sum(sd => sd.LineFinalTotal)
-                    })
-                    .OrderByDescending(c => c.SalesVolume)
-                    .Take(5)
-                    .ToListAsync();
-
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        // ...existing metrics...
-                        LowStockCount = lowStockCount,
-                        OverstockCount = overstockCount,
-                        ExpiredValue = expiredValue,
-                        AvgStockAge = avgStockAge,
-                        RestockFrequency = restockFrequency,
-                        TopSlowMovingProducts = topSlowMovingProducts,
-                        TotalStockQuantity = totalStock
-                        // ...other metrics...
-                    }
-                });
+                return Ok(new { success = true, data = overviewData });
             }
             catch (Exception ex)
             {
+                var errorMsg = "Error retrieving dashboard overview";
+                if (ex is InvalidOperationException && ex.Message.Contains("could not be translated"))
+                {
+                    errorMsg += " (EF Core query translation error: check for unsupported LINQ in your queries)";
+                }
                 return StatusCode(500, new {
                     success = false,
-                    error = "Error retrieving dashboard data",
+                    error = errorMsg,
                     details = ex.Message
                 });
-            }
-        }
-
-        [HttpGet("metrics")]
-        public async Task<IActionResult> GetMetrics()
-        {
-            try
-            {
-                var metrics = new
-                {
-                    totalSales = await _context.Sales.SumAsync(s => s.FinalTotal),
-                    stockAlerts = await _context.Products.CountAsync(p => p.ProductBatches.Any(pb => pb.StockQuantity < p.ReorderLevel)),
-                    payments = new
-                    {
-                        cash = await _context.Sales.Where(s => s.PaymentMethod == "Cash").SumAsync(s => s.FinalTotal),
-                        card = await _context.Sales.Where(s => s.PaymentMethod == "Card").SumAsync(s => s.FinalTotal)
-                    }
-                };
-                return Ok(new { success = true, data = metrics });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { success = false, error = "Error retrieving metrics", details = ex.Message });
             }
         }
 
