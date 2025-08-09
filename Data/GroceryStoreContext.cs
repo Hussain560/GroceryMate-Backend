@@ -66,9 +66,9 @@ namespace GroceryMateApi.Data
                     .HasColumnType("decimal(5,2)")
                     .HasDefaultValue(0.00m);
 
-                // Computed column for TotalStockQuantity (optional)
-                entity.Property(p => p.TotalStockQuantity)
-                    .HasComputedColumnSql("(SELECT SUM([StockQuantity]) FROM [ProductBatches] WHERE [ProductID] = [ProductID])", stored: false);
+                // REMOVE this block:
+                // entity.Property(p => p.TotalStockQuantity)
+                //     .HasComputedColumnSql("(SELECT SUM([StockQuantity]) FROM [ProductBatches] WHERE [ProductID] = [ProductID])", stored: false);
             });
 
             // Additional relationships
