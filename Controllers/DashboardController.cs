@@ -107,131 +107,265 @@ namespace GroceryMateApi.Controllers
                 var operationalEfficiencyRatio = 85.0m; // Mock value
 
                 // Calculate history arrays based on period
-                var netSalesHistory = new List<decimal>();
-                var grossProfitHistory = new List<decimal>();
-                var discountAmountHistory = new List<decimal>();
-                var returnAmountHistory = new List<decimal>();
-                var averageTransactionValueHistory = new List<decimal>();
-                var salesGrowthRateHistory = new List<decimal>();
-                var operationalEfficiencyRatioHistory = new List<decimal>();
-                var salesTransactionsHistory = new List<decimal>();
+                object netSalesHistory, grossProfitHistory, discountAmountHistory, returnAmountHistory, 
+                       averageTransactionValueHistory, salesGrowthRateHistory, operationalEfficiencyRatioHistory, 
+                       salesTransactionsHistory;
 
                 if (period.ToLower() == "day")
                 {
                     // 24 hourly values
-                    for (int hour = 0; hour < 24; hour++)
-                    {
-                        var hourlyData = sales.Where(sd => sd.Sale.SaleDate.Hour == hour).ToList();
-                        netSalesHistory.Add(hourlyData.Sum(sd => sd.UnitPrice * sd.Quantity));
-                        var hourlyDiscount = hourlyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
-                        grossProfitHistory.Add(netSalesHistory[hour] - hourlyDiscount);
-                        discountAmountHistory.Add(hourlyDiscount);
-                        returnAmountHistory.Add(0m); // Static for now
-                        var hourlyTransactions = hourlyData.Select(sd => sd.Sale.SaleDate).Distinct().Count();
-                        averageTransactionValueHistory.Add(hourlyTransactions > 0 ? netSalesHistory[hour] / hourlyTransactions : 0);
-                        salesGrowthRateHistory.Add(0m); // Calculate if needed
-                        operationalEfficiencyRatioHistory.Add(85.0m);
-                        salesTransactionsHistory.Add(hourlyTransactions);
-                    }
+                    netSalesHistory = Enumerable.Range(0, 24)
+                        .Select(hour => new
+                        {
+                            hour = hour.ToString("00") + ":00",
+                            value = sales.Where(sd => sd.Sale.SaleDate.Hour == hour).Sum(sd => sd.UnitPrice * sd.Quantity)
+                        })
+                        .ToList();
+
+                    grossProfitHistory = Enumerable.Range(0, 24)
+                        .Select(hour =>
+                        {
+                            var hourlyData = sales.Where(sd => sd.Sale.SaleDate.Hour == hour);
+                            var hourlyNet = hourlyData.Sum(sd => sd.UnitPrice * sd.Quantity);
+                            var hourlyDiscount = hourlyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                            return new { hour = hour.ToString("00") + ":00", value = hourlyNet - hourlyDiscount };
+                        })
+                        .ToList();
+
+                    discountAmountHistory = Enumerable.Range(0, 24)
+                        .Select(hour => new
+                        {
+                            hour = hour.ToString("00") + ":00",
+                            value = sales.Where(sd => sd.Sale.SaleDate.Hour == hour)
+                                .Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100))
+                        })
+                        .ToList();
+
+                    returnAmountHistory = Enumerable.Range(0, 24)
+                        .Select(hour => new { hour = hour.ToString("00") + ":00", value = 0m })
+                        .ToList();
+
+                    averageTransactionValueHistory = Enumerable.Range(0, 24)
+                        .Select(hour =>
+                        {
+                            var hourlyData = sales.Where(sd => sd.Sale.SaleDate.Hour == hour);
+                            var hourlyTransactions = hourlyData.Select(sd => sd.Sale.SaleID).Distinct().Count();
+                            var hourlyNet = hourlyData.Sum(sd => sd.UnitPrice * sd.Quantity);
+                            return new { hour = hour.ToString("00") + ":00", value = hourlyTransactions > 0 ? hourlyNet / hourlyTransactions : 0 };
+                        })
+                        .ToList();
+
+                    salesGrowthRateHistory = Enumerable.Range(0, 24)
+                        .Select(hour => new { hour = hour.ToString("00") + ":00", value = 0m })
+                        .ToList();
+
+                    operationalEfficiencyRatioHistory = Enumerable.Range(0, 24)
+                        .Select(hour => new { hour = hour.ToString("00") + ":00", value = 85.0m })
+                        .ToList();
+
+                    salesTransactionsHistory = Enumerable.Range(0, 24)
+                        .Select(hour => new
+                        {
+                            hour = hour.ToString("00") + ":00",
+                            value = sales.Where(sd => sd.Sale.SaleDate.Hour == hour).Select(sd => sd.Sale.SaleID).Distinct().Count()
+                        })
+                        .ToList();
                 }
                 else if (period.ToLower() == "week")
                 {
                     // 7 daily values
-                    for (int day = 0; day < 7; day++)
-                    {
-                        var targetDate = periodStart.AddDays(day).Date;
-                        var dailyData = sales.Where(sd => sd.Sale.SaleDate.Date == targetDate).ToList();
-                        netSalesHistory.Add(dailyData.Sum(sd => sd.UnitPrice * sd.Quantity));
-                        var dailyDiscount = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
-                        grossProfitHistory.Add(netSalesHistory[day] - dailyDiscount);
-                        discountAmountHistory.Add(dailyDiscount);
-                        returnAmountHistory.Add(0m);
-                        var dailyTransactions = dailyData.Select(sd => sd.Sale.SaleDate.Date).Distinct().Count();
-                        averageTransactionValueHistory.Add(dailyTransactions > 0 ? netSalesHistory[day] / dailyTransactions : 0);
-                        salesGrowthRateHistory.Add(0m);
-                        operationalEfficiencyRatioHistory.Add(85.0m);
-                        salesTransactionsHistory.Add(dailyTransactions);
-                    }
+                    var weekData = Enumerable.Range(0, 7)
+                        .Select(day =>
+                        {
+                            var targetDate = periodStart.AddDays(day).Date;
+                            var dailyData = sales.Where(sd => sd.Sale.SaleDate.Date == targetDate);
+                            var dailyNet = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity);
+                            var dailyDiscount = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                            var dailyTransactions = dailyData.Select(sd => sd.Sale.SaleID).Distinct().Count();
+
+                            return new
+                            {
+                                date = targetDate.ToString("yyyy-MM-dd"),
+                                netSales = dailyNet,
+                                grossProfit = dailyNet - dailyDiscount,
+                                discountAmount = dailyDiscount,
+                                returnAmount = 0m,
+                                averageTransactionValue = dailyTransactions > 0 ? dailyNet / dailyTransactions : 0,
+                                salesGrowthRate = 0m,
+                                operationalEfficiencyRatio = 85.0m,
+                                salesTransactions = dailyTransactions
+                            };
+                        })
+                        .ToList();
+
+                    netSalesHistory = weekData.Select(d => new { date = d.date, value = d.netSales }).ToList();
+                    grossProfitHistory = weekData.Select(d => new { date = d.date, value = d.grossProfit }).ToList();
+                    discountAmountHistory = weekData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
+                    returnAmountHistory = weekData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
+                    averageTransactionValueHistory = weekData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
+                    salesGrowthRateHistory = weekData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
+                    operationalEfficiencyRatioHistory = weekData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
+                    salesTransactionsHistory = weekData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                 }
                 else if (period.ToLower() == "month")
                 {
                     // Monthly daily values (28-31 days)
                     var daysInPeriod = (periodEnd - periodStart).Days;
-                    for (int day = 0; day < daysInPeriod; day++)
-                    {
-                        var targetDate = periodStart.AddDays(day).Date;
-                        var dailyData = sales.Where(sd => sd.Sale.SaleDate.Date == targetDate).ToList();
-                        netSalesHistory.Add(dailyData.Sum(sd => sd.UnitPrice * sd.Quantity));
-                        var dailyDiscount = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
-                        grossProfitHistory.Add(netSalesHistory[day] - dailyDiscount);
-                        discountAmountHistory.Add(dailyDiscount);
-                        returnAmountHistory.Add(0m);
-                        var dailyTransactions = dailyData.Select(sd => sd.Sale.SaleDate.Date).Distinct().Count();
-                        averageTransactionValueHistory.Add(dailyTransactions > 0 ? netSalesHistory[day] / dailyTransactions : 0);
-                        salesGrowthRateHistory.Add(0m);
-                        operationalEfficiencyRatioHistory.Add(85.0m);
-                        salesTransactionsHistory.Add(dailyTransactions);
-                    }
+                    var monthData = Enumerable.Range(0, daysInPeriod)
+                        .Select(day =>
+                        {
+                            var targetDate = periodStart.AddDays(day).Date;
+                            var dailyData = sales.Where(sd => sd.Sale.SaleDate.Date == targetDate);
+                            var dailyNet = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity);
+                            var dailyDiscount = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                            var dailyTransactions = dailyData.Select(sd => sd.Sale.SaleID).Distinct().Count();
+
+                            return new
+                            {
+                                date = targetDate.ToString("yyyy-MM-dd"),
+                                netSales = dailyNet,
+                                grossProfit = dailyNet - dailyDiscount,
+                                discountAmount = dailyDiscount,
+                                returnAmount = 0m,
+                                averageTransactionValue = dailyTransactions > 0 ? dailyNet / dailyTransactions : 0,
+                                salesGrowthRate = 0m,
+                                operationalEfficiencyRatio = 85.0m,
+                                salesTransactions = dailyTransactions
+                            };
+                        })
+                        .ToList();
+
+                    netSalesHistory = monthData.Select(d => new { date = d.date, value = d.netSales }).ToList();
+                    grossProfitHistory = monthData.Select(d => new { date = d.date, value = d.grossProfit }).ToList();
+                    discountAmountHistory = monthData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
+                    returnAmountHistory = monthData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
+                    averageTransactionValueHistory = monthData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
+                    salesGrowthRateHistory = monthData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
+                    operationalEfficiencyRatioHistory = monthData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
+                    salesTransactionsHistory = monthData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                 }
                 else if (period.ToLower() == "custom")
                 {
                     if (daysDiff <= 31)
                     {
                         // Daily values for short periods
-                        for (int day = 0; day < daysDiff; day++)
-                        {
-                            var targetDate = periodStart.AddDays(day).Date;
-                            var dailyData = sales.Where(sd => sd.Sale.SaleDate.Date == targetDate).ToList();
-                            netSalesHistory.Add(dailyData.Sum(sd => sd.UnitPrice * sd.Quantity));
-                            var dailyDiscount = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
-                            grossProfitHistory.Add(netSalesHistory[day] - dailyDiscount);
-                            discountAmountHistory.Add(dailyDiscount);
-                            returnAmountHistory.Add(0m);
-                            var dailyTransactions = dailyData.Select(sd => sd.Sale.SaleDate.Date).Distinct().Count();
-                            averageTransactionValueHistory.Add(dailyTransactions > 0 ? netSalesHistory[day] / dailyTransactions : 0);
-                            salesGrowthRateHistory.Add(0m);
-                            operationalEfficiencyRatioHistory.Add(85.0m);
-                            salesTransactionsHistory.Add(dailyTransactions);
-                        }
+                        var customDailyData = Enumerable.Range(0, daysDiff)
+                            .Select(day =>
+                            {
+                                var targetDate = periodStart.AddDays(day).Date;
+                                var dailyData = sales.Where(sd => sd.Sale.SaleDate.Date == targetDate);
+                                var dailyNet = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity);
+                                var dailyDiscount = dailyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                                var dailyTransactions = dailyData.Select(sd => sd.Sale.SaleID).Distinct().Count();
+
+                                return new
+                                {
+                                    date = targetDate.ToString("yyyy-MM-dd"),
+                                    netSales = dailyNet,
+                                    grossProfit = dailyNet - dailyDiscount,
+                                    discountAmount = dailyDiscount,
+                                    returnAmount = 0m,
+                                    averageTransactionValue = dailyTransactions > 0 ? dailyNet / dailyTransactions : 0,
+                                    salesGrowthRate = 0m,
+                                    operationalEfficiencyRatio = 85.0m,
+                                    salesTransactions = dailyTransactions
+                                };
+                            })
+                            .ToList();
+
+                        netSalesHistory = customDailyData.Select(d => new { date = d.date, value = d.netSales }).ToList();
+                        grossProfitHistory = customDailyData.Select(d => new { date = d.date, value = d.grossProfit }).ToList();
+                        discountAmountHistory = customDailyData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
+                        returnAmountHistory = customDailyData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
+                        averageTransactionValueHistory = customDailyData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
+                        salesGrowthRateHistory = customDailyData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
+                        operationalEfficiencyRatioHistory = customDailyData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
+                        salesTransactionsHistory = customDailyData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                     }
                     else if (daysDiff <= 365)
                     {
                         // Monthly values for medium periods
-                        var monthsInPeriod = sales.GroupBy(sd => new { sd.Sale.SaleDate.Year, sd.Sale.SaleDate.Month }).ToList();
-                        foreach (var monthGroup in monthsInPeriod)
-                        {
-                            var monthlyData = monthGroup.ToList();
-                            netSalesHistory.Add(monthlyData.Sum(sd => sd.UnitPrice * sd.Quantity));
-                            var monthlyDiscount = monthlyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
-                            grossProfitHistory.Add(netSalesHistory.Last() - monthlyDiscount);
-                            discountAmountHistory.Add(monthlyDiscount);
-                            returnAmountHistory.Add(0m);
-                            var monthlyTransactions = monthlyData.Select(sd => sd.Sale.SaleDate.Date).Distinct().Count();
-                            averageTransactionValueHistory.Add(monthlyTransactions > 0 ? netSalesHistory.Last() / monthlyTransactions : 0);
-                            salesGrowthRateHistory.Add(0m);
-                            operationalEfficiencyRatioHistory.Add(85.0m);
-                            salesTransactionsHistory.Add(monthlyTransactions);
-                        }
+                        var customMonthlyData = sales
+                            .GroupBy(sd => new { sd.Sale.SaleDate.Year, sd.Sale.SaleDate.Month })
+                            .Select(g =>
+                            {
+                                var monthlyNet = g.Sum(sd => sd.UnitPrice * sd.Quantity);
+                                var monthlyDiscount = g.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                                var monthlyTransactions = g.Select(sd => sd.Sale.SaleID).Distinct().Count();
+
+                                return new
+                                {
+                                    date = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("yyyy-MM"),
+                                    netSales = monthlyNet,
+                                    grossProfit = monthlyNet - monthlyDiscount,
+                                    discountAmount = monthlyDiscount,
+                                    returnAmount = 0m,
+                                    averageTransactionValue = monthlyTransactions > 0 ? monthlyNet / monthlyTransactions : 0,
+                                    salesGrowthRate = 0m,
+                                    operationalEfficiencyRatio = 85.0m,
+                                    salesTransactions = monthlyTransactions
+                                };
+                            })
+                            .OrderBy(m => m.date)
+                            .ToList();
+
+                        netSalesHistory = customMonthlyData.Select(d => new { date = d.date, value = d.netSales }).ToList();
+                        grossProfitHistory = customMonthlyData.Select(d => new { date = d.date, value = d.grossProfit }).ToList();
+                        discountAmountHistory = customMonthlyData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
+                        returnAmountHistory = customMonthlyData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
+                        averageTransactionValueHistory = customMonthlyData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
+                        salesGrowthRateHistory = customMonthlyData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
+                        operationalEfficiencyRatioHistory = customMonthlyData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
+                        salesTransactionsHistory = customMonthlyData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                     }
                     else
                     {
                         // Yearly values for long periods
-                        var yearsInPeriod = sales.GroupBy(sd => sd.Sale.SaleDate.Year).ToList();
-                        foreach (var yearGroup in yearsInPeriod)
-                        {
-                            var yearlyData = yearGroup.ToList();
-                            netSalesHistory.Add(yearlyData.Sum(sd => sd.UnitPrice * sd.Quantity));
-                            var yearlyDiscount = yearlyData.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
-                            grossProfitHistory.Add(netSalesHistory.Last() - yearlyDiscount);
-                            discountAmountHistory.Add(yearlyDiscount);
-                            returnAmountHistory.Add(0m);
-                            var yearlyTransactions = yearlyData.Select(sd => sd.Sale.SaleDate.Date).Distinct().Count();
-                            averageTransactionValueHistory.Add(yearlyTransactions > 0 ? netSalesHistory.Last() / yearlyTransactions : 0);
-                            salesGrowthRateHistory.Add(0m);
-                            operationalEfficiencyRatioHistory.Add(85.0m);
-                            salesTransactionsHistory.Add(yearlyTransactions);
-                        }
+                        var customYearlyData = sales
+                            .GroupBy(sd => sd.Sale.SaleDate.Year)
+                            .Select(g =>
+                            {
+                                var yearlyNet = g.Sum(sd => sd.UnitPrice * sd.Quantity);
+                                var yearlyDiscount = g.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
+                                var yearlyTransactions = g.Select(sd => sd.Sale.SaleID).Distinct().Count();
+
+                                return new
+                                {
+                                    date = g.Key.ToString("yyyy"),
+                                    netSales = yearlyNet,
+                                    grossProfit = yearlyNet - yearlyDiscount,
+                                    discountAmount = yearlyDiscount,
+                                    returnAmount = 0m,
+                                    averageTransactionValue = yearlyTransactions > 0 ? yearlyNet / yearlyTransactions : 0,
+                                    salesGrowthRate = 0m,
+                                    operationalEfficiencyRatio = 85.0m,
+                                    salesTransactions = yearlyTransactions
+                                };
+                            })
+                            .OrderBy(y => y.date)
+                            .ToList();
+
+                        netSalesHistory = customYearlyData.Select(d => new { date = d.date, value = d.netSales }).ToList();
+                        grossProfitHistory = customYearlyData.Select(d => new { date = d.date, value = d.grossProfit }).ToList();
+                        discountAmountHistory = customYearlyData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
+                        returnAmountHistory = customYearlyData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
+                        averageTransactionValueHistory = customYearlyData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
+                        salesGrowthRateHistory = customYearlyData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
+                        operationalEfficiencyRatioHistory = customYearlyData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
+                        salesTransactionsHistory = customYearlyData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                     }
+                }
+                else
+                {
+                    // Default empty arrays
+                    netSalesHistory = new List<object>();
+                    grossProfitHistory = new List<object>();
+                    discountAmountHistory = new List<object>();
+                    returnAmountHistory = new List<object>();
+                    averageTransactionValueHistory = new List<object>();
+                    salesGrowthRateHistory = new List<object>();
+                    operationalEfficiencyRatioHistory = new List<object>();
+                    salesTransactionsHistory = new List<object>();
                 }
 
                 // Hourly sales
@@ -267,7 +401,7 @@ namespace GroceryMateApi.Controllers
 
                 var overviewData = new
                 {
-                    // Sales metrics (existing)
+                    // Sales metrics with history
                     NetSales = netSales,
                     NetSalesHistory = netSalesHistory,
                     GrossProfit = grossProfit,
@@ -289,7 +423,7 @@ namespace GroceryMateApi.Controllers
                     TopPaymentByNetIncome = topPaymentByNetIncome,
                     TopCategoriesBySalesVolume = topCategoriesBySalesVolume,
 
-                    // Inventory metrics (merged from InventoryController)
+                    // Inventory metrics (existing)
                     LowStockCount = batches.Count(pb => pb.StockQuantity < pb.Product.ReorderLevel),
                     TurnoverRate = sales.Any()
                         ? sales.GroupBy(sd => sd.ProductID)
