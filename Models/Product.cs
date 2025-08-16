@@ -40,9 +40,12 @@ namespace GroceryMateApi.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        public int StockQuantity { get; set; } // Restore this property
+
         public ICollection<SaleDetail> SaleDetails { get; set; } = new List<SaleDetail>();
         public ICollection<InventoryTransaction> InventoryTransactions { get; set; } = new List<InventoryTransaction>();
-        public ICollection<ProductBatch> ProductBatches { get; set; } = new List<ProductBatch>();
+        // Remove ProductBatches reference
+        // public ICollection<ProductBatch> ProductBatches { get; set; } = new List<ProductBatch>();
     }
 }
 

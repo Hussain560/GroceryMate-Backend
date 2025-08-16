@@ -32,7 +32,8 @@ namespace GroceryMateApi.Data
         public DbSet<SaleDetail> SaleDetails { get; set; } = null!;
         public DbSet<Invoice> Invoices { get; set; } = null!;
         public DbSet<Expense> Expenses { get; set; } = null!; // Add this line
-        public DbSet<ProductBatch> ProductBatches { get; set; } = null!; // Add missing DbSet
+        // Remove ProductBatches DbSet
+        // public DbSet<ProductBatch> ProductBatches { get; set; } = null!; // Remove this line
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -66,9 +67,10 @@ namespace GroceryMateApi.Data
                     .HasColumnType("decimal(5,2)")
                     .HasDefaultValue(0.00m);
 
-                // REMOVE this block:
-                // entity.Property(p => p.TotalStockQuantity)
-                //     .HasComputedColumnSql("(SELECT SUM([StockQuantity]) FROM [ProductBatches] WHERE [ProductID] = [ProductID])", stored: false);
+                // Add StockQuantity configuration
+                entity.Property(p => p.StockQuantity)
+                    .IsRequired()
+                    .HasDefaultValue(0);
             });
 
             // Additional relationships
@@ -293,6 +295,7 @@ namespace GroceryMateApi.Data
                    BrandID = 23,
                    UnitPrice = 1.99M,
                    DiscountPercentage = 10.00m,
+                   StockQuantity = 100,
                    ReorderLevel = 0,
                    Barcode = "6291001001012",
                    ImageUrl = "https://img.ananinja.com/media/ninja-catalog-42/35173bab-8fd1-43b4-9b24-1968a4f83f65_ArabicBreadWhite.png?w=1920&q=75",
@@ -307,7 +310,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 5.99M,
                    DiscountPercentage = 15.00m,
-                   ReorderLevel = 0,
+                   StockQuantity = 50,
                    Barcode = "6291001001029",
                    ImageUrl = "https://store.nana.sa/_next/image?url=https%3A%2F%2Fcdn.nana.sa%2Fcatalog%2Flarge%2F0%2F6%2F3%2F4%2F06349cc79845d27fcdee53877157434e45d69d25_6287002130049.jpg&w=1200&q=75",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228219")
@@ -321,7 +324,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 7.50M,
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 75,
                    Barcode = "6291001001036",
                    ImageUrl = "https://cdn.mafrservices.com/pim-content/SAU/media/product/116989/1721309405/116989_main.jpg",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228225")
@@ -335,7 +338,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 2.99M,
                    DiscountPercentage = 5.00m, // 5% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 60,
                    Barcode = "6291001001043",
                    ImageUrl = "https://m.media-amazon.com/images/I/81+l9hI4nPL._AC_SY879_.jpg",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228229")
@@ -349,7 +352,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 11.00M,
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 80,
                    Barcode = "6291001001050",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/hba/h9b/50520415993886/106475_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228268")
@@ -363,7 +366,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 4.50M,
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 90,
                    Barcode = "6291001001067",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/hdd/h2c/63422372839454/597424_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228272")
@@ -377,7 +380,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 2.00M,
                    DiscountPercentage = 25.00m, // 25% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 120,
                    Barcode = "6291001001074",
                    ImageUrl = "https://m.media-amazon.com/images/I/71VwH-VGe6L._AC_SX569_.jpg",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228275")
@@ -391,7 +394,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 15.99M,
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 40,
                    Barcode = "6291001001081",
                    ImageUrl = "https://m.media-amazon.com/images/I/41hNkB0UiyL._AC_.jpg",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228279")
@@ -405,7 +408,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 8.25M,
                    DiscountPercentage = 5.00m, // 5% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 150,
                    Barcode = "6291001001098",
                    ImageUrl = "https://images.todoorstep.com/product/2305180/En.jpg?t=1747834652",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228283")
@@ -419,7 +422,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 2.99M,
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 100,
                    Barcode = "6291001001104",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/h75/ha4/9400079974430/51395_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228287")
@@ -433,7 +436,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 8.50M,
                    DiscountPercentage = 15.00m, // 15% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 70,
                    Barcode = "6291001001111",
                    ImageUrl = "https://almmedia.almarai.com/Gallery/35530-LABNEH-FF-400G-(1X28)-EN513202560117AM_sys513202560333AM.webp",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228290")
@@ -447,7 +450,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 12.75M, // Changed from 12.99 to 12.75
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 45,
                    Barcode = "6291001001128",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/h62/h02/33685666725918/684779_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228294")
@@ -461,7 +464,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 28.00M, // Changed from 15.99 to 28.00
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 85,
                    Barcode = "6291001001135",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/h46/h81/12844245680158/95739_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228297")
@@ -475,7 +478,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 29.99M,
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 40,
                    Barcode = "6291001001142",
                    ImageUrl = "https://m.media-amazon.com/images/I/51hPMDNdqZL._AC_SX679_.jpg",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228300")
@@ -489,7 +492,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 24.75M, // Changed from 24.99 to 24.75
                    DiscountPercentage = 5.00m, // 5% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 60,
                    Barcode = "6291001001159",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/h38/hd2/61652639809566/637206_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228304")
@@ -503,7 +506,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 88.50M, // Changed from 49.99 to 88.50
                    DiscountPercentage = 15.00m, // 15% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 30,
                    Barcode = "6291001001166",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/hea/h22/9780218855454/534136_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228308")
@@ -517,7 +520,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 30.50M, // Changed from 32.99 to 30.50
                    DiscountPercentage = 25.00m, // 25% discount
-                   ReorderLevel = 0,
+                   StockQuantity = 25,
                    Barcode = "6291001001173",
                    ImageUrl = "https://cdn.mafrservices.com/pim-content/SAU/media/product/559102/1745844003/559102_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228311")
@@ -531,7 +534,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 2,
                    UnitPrice = 9.25M, // Changed from 9.99 to 9.25
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 55,
                    Barcode = "6291001001180",
                    ImageUrl = "https://cdn.mafrservices.com/sys-master-root/h94/h6d/52426818781214/52224_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228314")
@@ -545,7 +548,7 @@ namespace GroceryMateApi.Data
                    SupplierID = 1,
                    UnitPrice = 20.75M, // Changed from 4.50 to 20.75
                    DiscountPercentage = 0.00m, // No discount
-                   ReorderLevel = 0,
+                   StockQuantity = 120,
                    Barcode = "6291001001197",
                    ImageUrl = "https://cdn.mafrservices.com/pim-content/SAU/media/product/744488/1735138803/744488_main.jpg?im=Resize=480",
                    CreatedAt = DateTime.Parse("2025-06-16T01:58:17.2228317")
@@ -559,6 +562,7 @@ namespace GroceryMateApi.Data
                    BrandID = 11,
                    UnitPrice = 14.95M,
                    DiscountPercentage = 0.00m, // No discount
+                   StockQuantity = 90,
                    ReorderLevel = 0,
                    Barcode = "6291001001203",
                    ImageUrl = "https://m.media-amazon.com/images/I/61klMwXJPbL._AC_SL1500_.jpg",
@@ -589,9 +593,9 @@ namespace GroceryMateApi.Data
                     .IsRequired()
                     .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasOne(it => it.ProductBatch)
-                    .WithMany(pb => pb.InventoryTransactions)
-                    .HasForeignKey(it => it.ProductBatchID)
+                entity.HasOne(it => it.Product)
+                    .WithMany(p => p.InventoryTransactions)
+                    .HasForeignKey(it => it.ProductID)
                     .IsRequired()
                     .OnDelete(DeleteBehavior.Restrict);
 
@@ -633,19 +637,6 @@ namespace GroceryMateApi.Data
                 entity.Property(e => e.Amount).HasPrecision(18, 2);
                 entity.Property(e => e.Date).IsRequired();
                 entity.Property(e => e.Description).HasMaxLength(500);
-            });
-
-            // ProductBatch relationships
-            modelBuilder.Entity<ProductBatch>(entity =>
-            {
-                entity.HasKey(pb => pb.BatchID);
-                entity.Property(pb => pb.StockQuantity).IsRequired();
-                entity.Property(pb => pb.ExpirationDate).IsRequired();
-                entity.Property(pb => pb.CreatedAt).IsRequired();
-                entity.HasOne(pb => pb.Product)
-                    .WithMany(p => p.ProductBatches)
-                    .HasForeignKey(pb => pb.ProductID)
-                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             base.OnModelCreating(modelBuilder); // Call base only if extending a base context
