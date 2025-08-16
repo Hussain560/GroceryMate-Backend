@@ -48,72 +48,49 @@ namespace GroceryMateApi.Controllers
                     _ => (date.HasValue ? date.Value.Date : today.Date, (date.HasValue ? date.Value.Date : today.Date).AddDays(1))
                 };
 
-                // Calculate granularity for custom periods
                 var daysDiff = period.ToLower() == "custom" && startDate.HasValue && endDate.HasValue
                     ? (endDate.Value - startDate.Value).Days
                     : 0;
 
-                var batchQuery = _context.ProductBatches
-                    .Include(pb => pb.Product).ThenInclude(p => p.Category)
+                // Use Products table only, no ProductBatches or expiration logic
+                var productsQuery = _context.Products
+                    .Include(p => p.Category)
                     .AsQueryable();
 
                 if (stockFilter != "All Time")
                 {
-                    if (stockFilter == "Last 30 Days")
-                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 30);
-                    else if (stockFilter == "30-60 Days")
-                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) >= 31 && EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 60);
-                    else if (stockFilter == "60-90 Days")
-                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(pb.CreatedAt, today) >= 61 && EF.Functions.DateDiffDay(pb.CreatedAt, today) <= 90);
-                    else if (stockFilter == "Near Expiry (<30 Days)")
-                        batchQuery = batchQuery.Where(pb => EF.Functions.DateDiffDay(today, pb.ExpirationDate) <= 30);
-                    else if (stockFilter == "Expired")
-                        batchQuery = batchQuery.Where(pb => pb.ExpirationDate < today);
+                    if (stockFilter == "Low Stock")
+                        productsQuery = productsQuery.Where(p => p.StockQuantity < p.ReorderLevel);
+                    else if (stockFilter == "Overstock")
+                        productsQuery = productsQuery.Where(p => p.StockQuantity > 2 * (p.ReorderLevel > 0 ? p.ReorderLevel : 10));
                 }
+
+                var products = await productsQuery.ToListAsync();
 
                 var salesQuery = _context.SaleDetails
                     .Include(sd => sd.Sale)
                     .Include(sd => sd.Product).ThenInclude(p => p.Category)
                     .Where(sd => sd.Sale.SaleDate >= periodStart && sd.Sale.SaleDate < periodEnd);
 
-                // Materialize batches and sales for efficient querying
-                var batches = await batchQuery.ToListAsync();
                 var sales = await salesQuery.ToListAsync();
 
-                // Group transactions for restock frequency
-                var restockGroups = await _context.InventoryTransactions
-                    .Where(it => it.TransactionDate >= today.AddMonths(-3))
-                    .ToListAsync();
-
-                // Calculate metrics
                 var netSales = sales.Sum(sd => sd.UnitPrice * sd.Quantity);
                 var discountAmount = sales.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
                 var grossProfit = netSales - discountAmount;
-                var returnAmount = 0m; // If you have a Returns table, sum here
+                var returnAmount = 0m;
                 var salesTransactions = await _context.Sales
                     .Where(s => s.SaleDate >= periodStart && s.SaleDate < periodEnd)
                     .CountAsync();
                 var averageTransactionValue = salesTransactions > 0
                     ? netSales / salesTransactions
                     : 0;
-                var previousPeriodStart = periodStart.AddDays(-(periodEnd - periodStart).TotalDays);
-                var previousNetSales = await _context.SaleDetails
-                    .Include(sd => sd.Sale)
-                    .Where(sd => sd.Sale.SaleDate >= previousPeriodStart && sd.Sale.SaleDate < periodStart)
-                    .SumAsync(sd => (decimal?)sd.UnitPrice * sd.Quantity) ?? 0;
-                var salesGrowthRate = previousNetSales > 0
-                    ? ((netSales - previousNetSales) / previousNetSales) * 100
-                    : 0;
-                var operationalEfficiencyRatio = 85.0m; // Mock value
 
-                // Calculate history arrays based on period
-                object netSalesHistory, grossProfitHistory, discountAmountHistory, returnAmountHistory, 
-                       averageTransactionValueHistory, salesGrowthRateHistory, operationalEfficiencyRatioHistory, 
-                       salesTransactionsHistory;
+                // History arrays (sales only)
+                object netSalesHistory, grossProfitHistory, discountAmountHistory, returnAmountHistory,
+                       averageTransactionValueHistory, salesTransactionsHistory;
 
                 if (period.ToLower() == "day")
                 {
-                    // 24 hourly values
                     netSalesHistory = Enumerable.Range(0, 24)
                         .Select(hour => new
                         {
@@ -155,14 +132,6 @@ namespace GroceryMateApi.Controllers
                         })
                         .ToList();
 
-                    salesGrowthRateHistory = Enumerable.Range(0, 24)
-                        .Select(hour => new { hour = hour.ToString("00") + ":00", value = 0m })
-                        .ToList();
-
-                    operationalEfficiencyRatioHistory = Enumerable.Range(0, 24)
-                        .Select(hour => new { hour = hour.ToString("00") + ":00", value = 85.0m })
-                        .ToList();
-
                     salesTransactionsHistory = Enumerable.Range(0, 24)
                         .Select(hour => new
                         {
@@ -173,7 +142,6 @@ namespace GroceryMateApi.Controllers
                 }
                 else if (period.ToLower() == "week")
                 {
-                    // 7 daily values
                     var weekData = Enumerable.Range(0, 7)
                         .Select(day =>
                         {
@@ -191,8 +159,6 @@ namespace GroceryMateApi.Controllers
                                 discountAmount = dailyDiscount,
                                 returnAmount = 0m,
                                 averageTransactionValue = dailyTransactions > 0 ? dailyNet / dailyTransactions : 0,
-                                salesGrowthRate = 0m,
-                                operationalEfficiencyRatio = 85.0m,
                                 salesTransactions = dailyTransactions
                             };
                         })
@@ -203,13 +169,10 @@ namespace GroceryMateApi.Controllers
                     discountAmountHistory = weekData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
                     returnAmountHistory = weekData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
                     averageTransactionValueHistory = weekData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
-                    salesGrowthRateHistory = weekData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
-                    operationalEfficiencyRatioHistory = weekData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
                     salesTransactionsHistory = weekData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                 }
                 else if (period.ToLower() == "month")
                 {
-                    // Monthly daily values (28-31 days)
                     var daysInPeriod = (periodEnd - periodStart).Days;
                     var monthData = Enumerable.Range(0, daysInPeriod)
                         .Select(day =>
@@ -228,8 +191,6 @@ namespace GroceryMateApi.Controllers
                                 discountAmount = dailyDiscount,
                                 returnAmount = 0m,
                                 averageTransactionValue = dailyTransactions > 0 ? dailyNet / dailyTransactions : 0,
-                                salesGrowthRate = 0m,
-                                operationalEfficiencyRatio = 85.0m,
                                 salesTransactions = dailyTransactions
                             };
                         })
@@ -240,15 +201,12 @@ namespace GroceryMateApi.Controllers
                     discountAmountHistory = monthData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
                     returnAmountHistory = monthData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
                     averageTransactionValueHistory = monthData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
-                    salesGrowthRateHistory = monthData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
-                    operationalEfficiencyRatioHistory = monthData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
                     salesTransactionsHistory = monthData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                 }
                 else if (period.ToLower() == "custom")
                 {
                     if (daysDiff <= 31)
                     {
-                        // Daily values for short periods
                         var customDailyData = Enumerable.Range(0, daysDiff)
                             .Select(day =>
                             {
@@ -266,8 +224,6 @@ namespace GroceryMateApi.Controllers
                                     discountAmount = dailyDiscount,
                                     returnAmount = 0m,
                                     averageTransactionValue = dailyTransactions > 0 ? dailyNet / dailyTransactions : 0,
-                                    salesGrowthRate = 0m,
-                                    operationalEfficiencyRatio = 85.0m,
                                     salesTransactions = dailyTransactions
                                 };
                             })
@@ -278,13 +234,10 @@ namespace GroceryMateApi.Controllers
                         discountAmountHistory = customDailyData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
                         returnAmountHistory = customDailyData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
                         averageTransactionValueHistory = customDailyData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
-                        salesGrowthRateHistory = customDailyData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
-                        operationalEfficiencyRatioHistory = customDailyData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
                         salesTransactionsHistory = customDailyData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                     }
                     else if (daysDiff <= 365)
                     {
-                        // Monthly values for medium periods
                         var customMonthlyData = sales
                             .GroupBy(sd => new { sd.Sale.SaleDate.Year, sd.Sale.SaleDate.Month })
                             .Select(g =>
@@ -292,17 +245,15 @@ namespace GroceryMateApi.Controllers
                                 var monthlyNet = g.Sum(sd => sd.UnitPrice * sd.Quantity);
                                 var monthlyDiscount = g.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
                                 var monthlyTransactions = g.Select(sd => sd.Sale.SaleID).Distinct().Count();
-
+                                var dateStr = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("yyyy-MM");
                                 return new
                                 {
-                                    date = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("yyyy-MM"),
+                                    date = dateStr,
                                     netSales = monthlyNet,
                                     grossProfit = monthlyNet - monthlyDiscount,
                                     discountAmount = monthlyDiscount,
                                     returnAmount = 0m,
                                     averageTransactionValue = monthlyTransactions > 0 ? monthlyNet / monthlyTransactions : 0,
-                                    salesGrowthRate = 0m,
-                                    operationalEfficiencyRatio = 85.0m,
                                     salesTransactions = monthlyTransactions
                                 };
                             })
@@ -314,13 +265,10 @@ namespace GroceryMateApi.Controllers
                         discountAmountHistory = customMonthlyData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
                         returnAmountHistory = customMonthlyData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
                         averageTransactionValueHistory = customMonthlyData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
-                        salesGrowthRateHistory = customMonthlyData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
-                        operationalEfficiencyRatioHistory = customMonthlyData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
                         salesTransactionsHistory = customMonthlyData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                     }
                     else
                     {
-                        // Yearly values for long periods
                         var customYearlyData = sales
                             .GroupBy(sd => sd.Sale.SaleDate.Year)
                             .Select(g =>
@@ -328,17 +276,15 @@ namespace GroceryMateApi.Controllers
                                 var yearlyNet = g.Sum(sd => sd.UnitPrice * sd.Quantity);
                                 var yearlyDiscount = g.Sum(sd => sd.UnitPrice * sd.Quantity * (sd.Product.DiscountPercentage / 100));
                                 var yearlyTransactions = g.Select(sd => sd.Sale.SaleID).Distinct().Count();
-
+                                var dateStr = g.Key.ToString();
                                 return new
                                 {
-                                    date = g.Key.ToString("yyyy"),
+                                    date = dateStr,
                                     netSales = yearlyNet,
                                     grossProfit = yearlyNet - yearlyDiscount,
                                     discountAmount = yearlyDiscount,
                                     returnAmount = 0m,
                                     averageTransactionValue = yearlyTransactions > 0 ? yearlyNet / yearlyTransactions : 0,
-                                    salesGrowthRate = 0m,
-                                    operationalEfficiencyRatio = 85.0m,
                                     salesTransactions = yearlyTransactions
                                 };
                             })
@@ -350,25 +296,19 @@ namespace GroceryMateApi.Controllers
                         discountAmountHistory = customYearlyData.Select(d => new { date = d.date, value = d.discountAmount }).ToList();
                         returnAmountHistory = customYearlyData.Select(d => new { date = d.date, value = d.returnAmount }).ToList();
                         averageTransactionValueHistory = customYearlyData.Select(d => new { date = d.date, value = d.averageTransactionValue }).ToList();
-                        salesGrowthRateHistory = customYearlyData.Select(d => new { date = d.date, value = d.salesGrowthRate }).ToList();
-                        operationalEfficiencyRatioHistory = customYearlyData.Select(d => new { date = d.date, value = d.operationalEfficiencyRatio }).ToList();
                         salesTransactionsHistory = customYearlyData.Select(d => new { date = d.date, value = d.salesTransactions }).ToList();
                     }
                 }
                 else
                 {
-                    // Default empty arrays
                     netSalesHistory = new List<object>();
                     grossProfitHistory = new List<object>();
                     discountAmountHistory = new List<object>();
                     returnAmountHistory = new List<object>();
                     averageTransactionValueHistory = new List<object>();
-                    salesGrowthRateHistory = new List<object>();
-                    operationalEfficiencyRatioHistory = new List<object>();
                     salesTransactionsHistory = new List<object>();
                 }
 
-                // Hourly sales
                 var hourlySales = Enumerable.Range(0, 24).Select(i => new
                 {
                     Hour = i,
@@ -401,7 +341,6 @@ namespace GroceryMateApi.Controllers
 
                 var overviewData = new
                 {
-                    // Sales metrics with history
                     NetSales = netSales,
                     NetSalesHistory = netSalesHistory,
                     GrossProfit = grossProfit,
@@ -412,66 +351,12 @@ namespace GroceryMateApi.Controllers
                     ReturnAmountHistory = returnAmountHistory,
                     AverageTransactionValue = averageTransactionValue,
                     AverageTransactionValueHistory = averageTransactionValueHistory,
-                    SalesGrowthRate = salesGrowthRate,
-                    SalesGrowthRateHistory = salesGrowthRateHistory,
-                    OperationalEfficiencyRatio = operationalEfficiencyRatio,
-                    OperationalEfficiencyRatioHistory = operationalEfficiencyRatioHistory,
                     SalesTransactions = salesTransactions,
                     SalesTransactionsHistory = salesTransactionsHistory,
                     HourlySales = hourlySales,
                     TopProductsByNetSales = topProductsByNetSales,
                     TopPaymentByNetIncome = topPaymentByNetIncome,
-                    TopCategoriesBySalesVolume = topCategoriesBySalesVolume,
-
-                    // Inventory metrics (existing)
-                    LowStockCount = batches.Count(pb => pb.StockQuantity < pb.Product.ReorderLevel),
-                    TurnoverRate = sales.Any()
-                        ? sales.GroupBy(sd => sd.ProductID)
-                            .Select(g =>
-                            {
-                                var stock = batches.Where(pb => pb.ProductID == g.Key).Sum(pb => pb.StockQuantity);
-                                return stock > 0 ? (decimal)g.Sum(sd => sd.Quantity) / stock : 0;
-                            })
-                            .DefaultIfEmpty(0)
-                            .Average()
-                        : 0,
-                    OverstockCount = batches.Count(pb => pb.StockQuantity > 2 * (pb.Product.ReorderLevel > 0 ? pb.Product.ReorderLevel : 10)),
-                    AvgStockAge = batches.Any()
-                        ? batches.Average(pb => (today - pb.CreatedAt).TotalDays)
-                        : 0,
-                    StockValue = batches
-                        .GroupBy(pb => pb.Product.Category.CategoryName)
-                        .ToDictionary(g => g.Key, g => g.Sum(pb => pb.StockQuantity * pb.Product.UnitPrice)),
-                    RestockFrequency = restockGroups
-                        .GroupBy(it => new { it.TransactionDate.Year, it.TransactionDate.Month })
-                        .Select(g => g.Count())
-                        .DefaultIfEmpty(0)
-                        .Average(),
-                    TopSlowMovingProducts = sales
-                        .GroupBy(sd => sd.ProductID)
-                        .Select(g => new
-                        {
-                            ProductName = g.First().Product.ProductName,
-                            LastSoldDate = g.Max(sd => (DateTime?)sd.Sale.SaleDate),
-                            ExpirationDate = batches.FirstOrDefault(pb => pb.ProductID == g.Key)?.ExpirationDate
-                        })
-                        .OrderBy(g => g.LastSoldDate ?? DateTime.MaxValue)
-                        .Take(5)
-                        .ToList(),
-                    OutageRiskCount = batches.Any() && sales.Any()
-                        ? batches
-                            .Join(sales, pb => pb.ProductID, sd => sd.ProductID, (pb, sd) => new { pb, sd })
-                            .GroupBy(x => x.pb.ProductID)
-                            .Select(g =>
-                            {
-                                var avgDailySales = g.Sum(x => x.sd.Quantity) / 30m;
-                                return new { ProductID = g.Key, AvgDailySales = avgDailySales };
-                            })
-                            .Join(batches, g => g.ProductID, pb => pb.ProductID, (g, pb) => new { pb, g.AvgDailySales })
-                            .Count(x => x.pb.StockQuantity < x.AvgDailySales)
-                        : 0,
-                    ExpiredValue = batches.Where(pb => pb.ExpirationDate < today)
-                        .Sum(pb => pb.StockQuantity * pb.Product.UnitPrice)
+                    TopCategoriesBySalesVolume = topCategoriesBySalesVolume
                 };
 
                 return Ok(new { success = true, data = overviewData });

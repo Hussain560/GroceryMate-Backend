@@ -9,8 +9,8 @@ namespace GroceryMateApi.Models
         public int TransactionID { get; set; }
 
         [Required]
-        public int ProductBatchID { get; set; } // Changed from ProductID
-        public ProductBatch ProductBatch { get; set; } = null!;
+        public int ProductID { get; set; } // Now references Product directly
+        public Product Product { get; set; } = null!;
 
         [Required]
         [StringLength(20)]

@@ -33,13 +33,12 @@ namespace GroceryMateApi.Controllers
                     .Include(p => p.Brand)
                     .Include(p => p.Category)
                     .Include(p => p.Supplier)
-                    .Include(p => p.ProductBatches) // Include batches for stock calculation
                     .AsQueryable();
 
                 if (!string.IsNullOrEmpty(search))
                 {
                     search = search.ToLower();
-                    query = query.Where(p => 
+                    query = query.Where(p =>
                         p.ProductName.ToLower().Contains(search) ||
                         (p.Barcode != null && p.Barcode.ToLower().Contains(search)) ||
                         p.Brand.BrandName.ToLower().Contains(search));
@@ -64,7 +63,7 @@ namespace GroceryMateApi.Controllers
                         brand = p.Brand.BrandName,
                         category = p.Category.CategoryName,
                         supplier = p.Supplier.SupplierName,
-                        quantity = p.ProductBatches.Sum(pb => pb.StockQuantity), // Use batches for stock
+                        quantity = p.StockQuantity,
                         reorderLevel = p.ReorderLevel,
                         price = p.UnitPrice,
                         discountPercentage = p.DiscountPercentage,
@@ -92,13 +91,12 @@ namespace GroceryMateApi.Controllers
                 var query = _context.Products
                     .Include(p => p.Category)
                     .Include(p => p.Brand)
-                    .Include(p => p.ProductBatches)
-                    .Where(p => p.ProductBatches.Sum(pb => pb.StockQuantity) <= LOW_STOCK_THRESHOLD);
+                    .Where(p => p.StockQuantity <= LOW_STOCK_THRESHOLD);
 
                 if (!string.IsNullOrEmpty(search))
                 {
                     search = search.ToLower();
-                    query = query.Where(p => 
+                    query = query.Where(p =>
                         (p.Barcode != null && p.Barcode.ToLower().Contains(search)) ||
                         p.ProductName.ToLower().Contains(search));
                 }
@@ -121,7 +119,7 @@ namespace GroceryMateApi.Controllers
                         brand = p.Brand.BrandName,
                         category = p.Category.CategoryName,
                         price = p.UnitPrice,
-                        stockQuantity = p.ProductBatches.Sum(pb => pb.StockQuantity),
+                        stockQuantity = p.StockQuantity,
                         barcode = p.Barcode,
                         lowStockThreshold = LOW_STOCK_THRESHOLD,
                         imageUrl = p.ImageUrl ?? "/images/products/default.jpg"
@@ -146,8 +144,6 @@ namespace GroceryMateApi.Controllers
             try
             {
                 var product = await _context.Products
-                    .Include(p => p.ProductBatches)
-                    .Include(p => p.Category)
                     .FirstOrDefaultAsync(p => p.ProductID == request.ProductID);
 
                 if (product == null)
@@ -161,16 +157,9 @@ namespace GroceryMateApi.Controllers
                     return Unauthorized(new { success = false, message = "User not authenticated" });
                 }
 
-                // Find batch to restock (e.g., latest batch or create new batch logic)
-                var batch = product.ProductBatches.OrderByDescending(pb => pb.ExpirationDate).FirstOrDefault();
-                if (batch == null)
-                {
-                    return BadRequest(new { success = false, message = "No batch found for product. Please create a batch first." });
-                }
-
                 var transaction = new InventoryTransaction
                 {
-                    ProductBatchID = batch.BatchID,
+                    ProductID = product.ProductID,
                     Quantity = request.Quantity,
                     TransactionDate = DateTime.UtcNow,
                     TransactionType = "Restock",
@@ -179,7 +168,7 @@ namespace GroceryMateApi.Controllers
                 };
 
                 _context.InventoryTransactions.Add(transaction);
-                batch.StockQuantity += request.Quantity;
+                product.StockQuantity += request.Quantity;
 
                 await _context.SaveChangesAsync();
 
@@ -199,18 +188,13 @@ namespace GroceryMateApi.Controllers
             try
             {
                 var product = await _context.Products
-                    .Include(p => p.ProductBatches)
                     .FirstOrDefaultAsync(p => p.ProductID == request.ProductID);
 
                 if (product == null)
                     return NotFound(new { success = false, message = "Product not found" });
 
-                var batch = product.ProductBatches.OrderByDescending(pb => pb.ExpirationDate).FirstOrDefault();
-                if (batch == null)
-                    return BadRequest(new { success = false, message = "No batch found for product. Please create a batch first." });
-
-                if (batch.StockQuantity < request.Quantity)
-                    return BadRequest(new { success = false, message = $"Insufficient stock. Current stock: {batch.StockQuantity}" });
+                if (product.StockQuantity < request.Quantity)
+                    return BadRequest(new { success = false, message = $"Insufficient stock. Current stock: {product.StockQuantity}" });
 
                 var userId = GetCurrentUserId();
                 if (userId == 0)
@@ -220,7 +204,7 @@ namespace GroceryMateApi.Controllers
 
                 var transaction = new InventoryTransaction
                 {
-                    ProductBatchID = batch.BatchID,
+                    ProductID = product.ProductID,
                     Quantity = request.Quantity,
                     TransactionDate = DateTime.UtcNow,
                     TransactionType = "Spoilage",
@@ -228,7 +212,7 @@ namespace GroceryMateApi.Controllers
                     Notes = request.Notes
                 };
 
-                batch.StockQuantity -= request.Quantity;
+                product.StockQuantity -= request.Quantity;
                 _context.InventoryTransactions.Add(transaction);
                 await _context.SaveChangesAsync();
 
@@ -248,14 +232,13 @@ namespace GroceryMateApi.Controllers
             try
             {
                 var transactions = await _context.InventoryTransactions
-                    .Include(t => t.ProductBatch)
-                        .ThenInclude(pb => pb.Product)
+                    .Include(t => t.Product)
                     .Include(t => t.User)
                     .OrderByDescending(t => t.TransactionDate)
                     .Select(t => new
                     {
                         id = t.TransactionID,
-                        productName = t.ProductBatch.Product.ProductName,
+                        productName = t.Product.ProductName,
                         quantity = t.Quantity,
                         transactionType = t.TransactionType,
                         transactionDate = t.TransactionDate,
